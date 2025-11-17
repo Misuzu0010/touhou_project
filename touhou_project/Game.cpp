@@ -5,39 +5,39 @@ BulletPattern bp;
 bool Game::Init()
 {
     SDL_Init(SDL_INIT_VIDEO);
-    SDL_Window* window = SDL_CreateWindow(u8"–|·½»ÃÏëÏç", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 640, 480, 0);
+    SDL_Window* window = SDL_CreateWindow(u8"æ±æ–¹å¹»æƒ³ä¹¡", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 640, 480, 0);
     cur_Window = window;
     cur_Renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
    
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
     {
-        std::cout << "SDL ³õÊ¼»¯Ê§°Ü: " << SDL_GetError() << std::endl;
+        std::cout << "SDL åˆå§‹åŒ–å¤±è´¥: " << SDL_GetError() << std::endl;
         return false;
     }
 
    
     if (!cur_Window)
     {
-        std::cout << "´°¿Ú´´½¨Ê§°Ü: " << SDL_GetError() << std::endl;
+        std::cout << "çª—å£åˆ›å»ºå¤±è´¥: " << SDL_GetError() << std::endl;
         return false;
     }
 
 
     if (!cur_Renderer)
     {
-        std::cout << "äÖÈ¾Æ÷´´½¨Ê§°Ü: " << SDL_GetError() << std::endl;
+        std::cout << "æ¸²æŸ“å™¨åˆ›å»ºå¤±è´¥: " << SDL_GetError() << std::endl;
         return false;
     }
     is_Running = true;
-    //³õÊ¼»¯Íæ¼Òda
+    //åˆå§‹åŒ–ç©å®¶
     player = new Player(240.0f, 400.0f);
-    //³õÊ¼»¯µĞÈË
+    //åˆå§‹åŒ–æ•Œäºº
     Enemy*enemy = new Enemy(240.0f, 100.0f);
     
     Enemies.push_back(enemy);
     lastTime = SDL_GetTicks();
     shootTimer = 0.0f;
-    enemyShootTimer = 0.0f;  // ¼ÓÕâĞĞ
+    enemyShootTimer = 0.0f; 
     spiralAngle = 0.0f;
     return true;
 }
@@ -74,51 +74,51 @@ void Game::HandleEvents()
     }
 }
 
-//Ã¿Ò»¸ö deltaTime ÄÚËùĞèÒª¸üĞÂµÄËùÓĞÄÚÈİ
+//æ¯ä¸€ä¸ª deltaTime å†…æ‰€éœ€è¦æ›´æ–°çš„æ‰€æœ‰å†…å®¹
 void Game::Update(float DeltaTime) 
 {
-    //ÏÈ¸üĞÂÍæ¼ÒµÄ update
+    //å…ˆæ›´æ–°ç©å®¶çš„ update
     player->Update(DeltaTime);
 
-    //¼ì²âÍæ¼ÒµÄ²Ù×÷
-	//µ÷ÓÃÍæ¼Ò¹¥»÷·½Ê½
+    //æ£€æµ‹ç©å®¶çš„æ“ä½œ
+	//è°ƒç”¨ç©å®¶æ”»å‡»æ–¹å¼
 	const Uint8* keyStates = SDL_GetKeyboardState(NULL);
     if (keyStates[SDL_SCANCODE_Z]) 
     {
         if (shootTimer <= 0.0f) {
 			bp.ShootStraight(player->Position.x, player->Position.y, 500.0f, playerBullets);
-			shootTimer = 0.1f; // ÉèÖÃÉä»÷¼ä¸ôÎª0.1Ãë
+			shootTimer = 0.1f; // è®¾ç½®å°„å‡»é—´éš”ä¸º0.1ç§’
         }
         
     }
-    shootTimer -= DeltaTime;  //ÒÆµ½ifÍâÃæ£¬Ò»Ö±¼õ
-    if (shootTimer < 0.0f) shootTimer = 0.0f;  // ·ÀÖ¹¸ºÊı
-	//¸üĞÂµĞÈËµÄÉä»÷
+    shootTimer -= DeltaTime;  //ç§»åˆ°ifå¤–é¢ï¼Œä¸€ç›´å‡
+    if (shootTimer < 0.0f) shootTimer = 0.0f;  // é˜²æ­¢è´Ÿæ•°
+	//æ›´æ–°æ•Œäººçš„å°„å‡»
     enemyShootTimer -= DeltaTime;
     for (auto& enemy : Enemies) 
 	{
         
         if (enemy->Blood > 4000.0f) {
-            //µÚÒ»½×¶Î »·ĞÎµ¯Ä»
+            //ç¬¬ä¸€é˜¶æ®µ ç¯å½¢å¼¹å¹•
             if (enemyShootTimer<= 0.0f) {
                 bp.ShootRing(enemy->Position.x, enemy->Position.y, 150.0f, 90, Game::enemyBullets);
-                enemyShootTimer = 0.2f; // ÉèÖÃÉä»÷¼ä¸ôÎª1Ãë
+                enemyShootTimer = 0.2f; // è®¾ç½®å°„å‡»é—´éš”ä¸º0.2f
             }
         }
         else if (enemy->Blood > 2000.0f) {
-            //µÚ¶ş½×¶Î ÉÈĞÎµ¯Ä» 
+            //ç¬¬äºŒé˜¶æ®µ æ‰‡å½¢å¼¹å¹• 
             if (enemyShootTimer  <= 0.0f) {
                 bp.ShootSector(enemy->Position.x, enemy->Position.y, 200.0f, Game::enemyBullets);
-                enemyShootTimer= 0.2f; // ÉèÖÃÉä»÷¼ä¸ôÎª1.5Ãë
+                enemyShootTimer= 0.2f; // è®¾ç½®å°„å‡»é—´éš”ä¸º0.2ç§’
             }
         }
         else {
-            //µÚÈı½×¶Î ÂİĞıµ¯Ä»
+            //ç¬¬ä¸‰é˜¶æ®µ èºæ—‹å¼¹å¹•
             if (enemyShootTimer <= 0.0f) {
                 static float spiralAngle = 0.0f;
                 bp.ShootSpiral(enemy->Position.x, enemy->Position.y, 250.0f, spiralAngle, 30, Game::enemyBullets);
-                spiralAngle += M_PI / 12; // Ã¿´Î·¢ÉäºóÔö¼Ó½Ç¶È£¬ĞÎ³ÉÂİĞıĞ§¹û
-                enemyShootTimer = 0.2f; // ÉèÖÃÉä»÷¼ä¸ôÎª0.2Ãë
+                spiralAngle += M_PI / 12; // æ¯æ¬¡å‘å°„åå¢åŠ è§’åº¦ï¼Œå½¢æˆèºæ—‹æ•ˆæœ
+                enemyShootTimer = 0.2f; // è®¾ç½®å°„å‡»é—´éš”ä¸º0.2ç§’
             }
         }
        
@@ -128,8 +128,8 @@ void Game::Update(float DeltaTime)
     for (auto& bullet : playerBullets) bullet->Update(DeltaTime);
     for (auto& bullet : enemyBullets) bullet->Update(DeltaTime);
 
-    //Åö×²¼ì²â
-	//(1)Íæ¼Ò×Óµ¯ÓëµĞÈËÅö×²¼ì²â
+    //ç¢°æ’æ£€æµ‹
+	//(1)ç©å®¶å­å¼¹ä¸æ•Œäººç¢°æ’æ£€æµ‹
     for (auto& bullet : playerBullets) 
     {
         if (!bullet->active)continue;
@@ -148,7 +148,7 @@ void Game::Update(float DeltaTime)
         }
     }
 
-	//(2)µĞÈË×Óµ¯ÓëÍæ¼ÒÅö×²¼ì²â
+	//(2)æ•Œäººå­å¼¹ä¸ç©å®¶ç¢°æ’æ£€æµ‹
     for (auto& bullet : enemyBullets) 
     {
         if (!bullet->active) continue;
@@ -159,7 +159,7 @@ void Game::Update(float DeltaTime)
             if (player->Dead_judge()) 
             {
                 
-                std::cout << "»µß÷»µß÷£¬ÊäÁËß÷¡£";
+                std::cout << "åå–µåå–µï¼Œè¾“äº†å–µã€‚";
 				is_Running = false;
 
             }
@@ -167,7 +167,8 @@ void Game::Update(float DeltaTime)
         }
     }
 
-    // ÇåÀí
+    // æ¸…ç†
+	//æœ¬æ®µå¯»æ‰¾aiå·¥å…· è¿ç”¨lambdaè¡¨è¾¾å¼å†™å‡ºäº†ä¸€ä¸ªç®¡ç†å­å¼¹çš„eraseå‡½æ•°
     playerBullets.erase(
         remove_if(playerBullets.begin(), playerBullets.end(),
             [](Bullet* b) {
@@ -191,7 +192,7 @@ void Game::Update(float DeltaTime)
 
     if (Enemies.empty()) 
     {
-		std::cout << "¹§Ï²ß÷£¬Ó®ÁËß÷!!!!Ö÷ÈËÊÇ×î°ôµÄ!!!";
+		std::cout << "æ­å–œå–µï¼Œèµ¢äº†å–µ!!!!ä¸»äººæ˜¯æœ€æ£’çš„!!!";
 		is_Running = false;
     }
 
@@ -202,12 +203,12 @@ void Game::Render()
 	SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 0, 255);
     SDL_RenderClear(cur_Renderer);
     
-  //äÖÈ¾Íæ¼ÒµÄ´úÂë
+  //æ¸²æŸ“ç©å®¶çš„ä»£ç 
     SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 255, 255);
     SDL_Rect playerRect = { (int)player->Position.x - player->radius, (int)player->Position.y - player->radius, (int)player->radius * 2, (int)player->radius * 2 };
     SDL_RenderFillRect(cur_Renderer, &playerRect);
 
-    //µĞÈË
+    //æ•Œäºº
     for (auto& enemy : Enemies) 
     {
         SDL_SetRenderDrawColor(cur_Renderer, 255, 0, 0, 255);
@@ -215,7 +216,7 @@ void Game::Render()
         SDL_RenderFillRect(cur_Renderer, &enemyRect);
     }
 
-    //×Óµ¯
+    //å­å¼¹
     for (auto& bullet : playerBullets) 
     {
 		if (bullet->active)bullet->Render(cur_Renderer);
@@ -225,7 +226,7 @@ void Game::Render()
         if (bullet->active)bullet->Render(cur_Renderer);
     }
 
-	//ÏÔÊ¾äÖÈ¾½á¹û
+	//æ˜¾ç¤ºæ¸²æŸ“ç»“æœ
     SDL_RenderPresent(cur_Renderer);
 }
 
@@ -236,8 +237,8 @@ void Game::Clean()
     SDL_Delay(5000);
     SDL_Quit();
 
-    std::cout << "ÓÎÏ·ÇåÀíÍê±Ï£¡" << std::endl;
-    //ÄÚ´æ¹ÜÀí
+    std::cout << "æ¸¸æˆæ¸…ç†å®Œæ¯•ï¼" << std::endl;
+    //å†…å­˜ç®¡ç†
     delete player;
     for (auto& enemy : Enemies) delete enemy;
     Enemies.clear();
