@@ -17,55 +17,40 @@ public:
 	Uint32 lastTime;
 	float shootTimer;
 	
-	void Update(float deltaTime) override 
-	{
-		Velocity.x = 0;
-		Velocity.y = 0;
-		//每次更新的时候 重置速度
-		float speed = 100.0f;
-		const Uint8* keyStates = SDL_GetKeyboardState(NULL);
-		//输入逻辑
-		if (keyStates[SDL_SCANCODE_W]) 
-		{
-			Velocity.y = -speed;
-		}
-		if (keyStates[SDL_SCANCODE_S]) 
-		{
-			Velocity.y = speed;
-		}
-		if (keyStates[SDL_SCANCODE_A]) 
-		{
-			Velocity.x = -speed;
-		}
-		if (keyStates[SDL_SCANCODE_D]) 
-		{
-			Velocity.x = speed;
-		}
-		if (keyStates[SDL_SCANCODE_UP])
-		{
-			Velocity.y = -speed;
-		}
-		if (keyStates[SDL_SCANCODE_DOWN])
-		{
-			Velocity.y = speed;
-		}
-		if (keyStates[SDL_SCANCODE_LEFT])
-		{
-			Velocity.x = -speed;
-		}
-		if (keyStates[SDL_SCANCODE_RIGHT])
-		{
-			Velocity.x = speed;
-		}
-		//调用父类的更新函数
-		Entity::Update(deltaTime);
-		//限制玩家在屏幕内移动
-		if (Position.x < 0) Position.x = 0;
-		if (Position.x > 640) Position.x = 640;
-		if (Position.y < 0) Position.y = 0;
-		if (Position.y > 480) Position.y = 480;
+    void Update(float deltaTime) override
+    {
+        // 1. 归零速度
+        Velocity.x = 0;
+        Velocity.y = 0;
 
-	}
+        // 2. 调整基础速度（建议改快点！）
+        float speed = 300.0f;
+
+        const Uint8* keyStates = SDL_GetKeyboardState(NULL);
+
+        // 3. Y轴逻辑 (W/上 减坐标，S/下 加坐标)
+        float dirY = 0.0f;
+        if (keyStates[SDL_SCANCODE_W] || keyStates[SDL_SCANCODE_UP])    dirY -= 1.0f;
+        if (keyStates[SDL_SCANCODE_S] || keyStates[SDL_SCANCODE_DOWN])  dirY += 1.0f;
+
+        // 4. X轴逻辑 (A/左 减坐标，D/右 加坐标)
+        float dirX = 0.0f;
+        if (keyStates[SDL_SCANCODE_A] || keyStates[SDL_SCANCODE_LEFT])  dirX -= 1.0f;
+        if (keyStates[SDL_SCANCODE_D] || keyStates[SDL_SCANCODE_RIGHT]) dirX += 1.0f;
+
+        // 5. 应用速度 (简单的防斜向加速归一化可以以后做，先保证基础移动)
+        Velocity.x = dirX * speed;
+        Velocity.y = dirY * speed;
+
+        // 6. 调用父类更新位置
+        Entity::Update(deltaTime);
+
+        // 7. 边界限制 (保持你原来的代码)
+        if (Position.x < 0) Position.x = 0;
+        if (Position.x > 640) Position.x = 640;
+        if (Position.y < 0) Position.y = 0;
+        if (Position.y > 480) Position.y = 480;
+    }
 
 	void hit(float damage) 
 	{

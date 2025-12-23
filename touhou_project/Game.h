@@ -6,9 +6,30 @@
 #include "Bullet.h"
 #include"BulletPattern.h"
 
+enum class State
+{
+	START_MENU,
+	PLAYING,
+	DIALOGUE,
+	GAME_OVER,
+	VICTORY
+};
+struct DialogueLine
+{
+	std::string name;
+	std::string Content;
+	SDL_Color color;
+
+};
 class Game 
 {
 public:
+	State CurrentState;
+
+	std::vector<DialogueLine>DialoueQueue;
+	int cur_index;
+
+
 	//检测是否正常载入
 	bool Init();
 
@@ -26,6 +47,8 @@ public:
 
 	//渲染当前游戏画面
 	void Render();
+
+	void StartDialogue(const std::vector<DialogueLine>& DialogueQueue);
 
 	//指向游戏窗口的指针，负责管理游戏窗口的创建、显示和销毁
 	SDL_Window* cur_Window;
@@ -50,5 +73,9 @@ public:
 	float shootTimer;       // 玩家用
 	float enemyShootTimer;  // 敌人用
 	float spiralAngle;
+
+	//启动画面相关
+	float BootProgress;
+	float BootTimer;
 
 };

@@ -1,20 +1,19 @@
 #include "Game.h"
 #include <iostream>
-Game game;
 BulletPattern bp;
 bool Game::Init()
 {
-    SDL_Init(SDL_INIT_VIDEO);
-    SDL_Window* window = SDL_CreateWindow(u8"東方幻想乡", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 640, 480, 0);
-    cur_Window = window;
-    cur_Renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    //SDL_Init(SDL_INIT_VIDEO);
    
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
     {
         std::cout << "SDL 初始化失败: " << SDL_GetError() << std::endl;
         return false;
     }
-
+    SDL_Window* window = SDL_CreateWindow(u8"東方幻想乡", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 640, 480, 0);
+    cur_Window = window;
+    cur_Renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+   
    
     if (!cur_Window)
     {
@@ -39,6 +38,18 @@ bool Game::Init()
     shootTimer = 0.0f;
     enemyShootTimer = 0.0f;  // 加这行
     spiralAngle = 0.0f;
+
+    CurrentState = State::START_MENU;
+    BootProgress = 0.0f;
+    BootTimer = 0.0f;
+    std::vector<DialogueLine>Phase1
+    {
+
+        {},{},{},{},{}
+    };
+    StartDialogue(Phase1);
+
+
     return true;
 }
 
@@ -47,7 +58,7 @@ void Game::Run()
     while (is_Running)
     {
         Uint32 currentTime = SDL_GetTicks();
-        float deltaTime = (currentTime - lastTime) / 1000.0f;
+        double deltaTime = (currentTime - lastTime) / 1000.0f;
         lastTime = currentTime;
 
         HandleEvents();
@@ -67,6 +78,11 @@ void Game::HandleEvents()
     SDL_Event event;
     while (SDL_PollEvent(&event))
     {
+      /*  std::cout << "event type = " << event.type << std::endl;
+        if (event.type == SDL_KEYDOWN) {
+            std::cout << "KEYDOWN sym=" << event.key.keysym.sym
+                << " scancode=" << event.key.keysym.scancode << std::endl;
+        }*/
         if (event.type == SDL_QUIT) {
             is_Running = false;
         }
@@ -77,6 +93,10 @@ void Game::HandleEvents()
 //每一个 deltaTime 内所需要更新的所有内容
 void Game::Update(float DeltaTime) 
 {
+    if (CurrentState == State::DIALOGUE) 
+    {
+		const Uint8* KeyStates = SDL_GetKeyboardState(NULL);
+    }
     //先更新玩家的 update
     player->Update(DeltaTime);
 
@@ -85,9 +105,11 @@ void Game::Update(float DeltaTime)
 	const Uint8* keyStates = SDL_GetKeyboardState(NULL);
     if (keyStates[SDL_SCANCODE_Z]) 
     {
+        //std::cout << "press Z" << std::endl;
         if (shootTimer <= 0.0f) {
+
 			bp.ShootStraight(player->Position.x, player->Position.y, 500.0f, playerBullets);
-			shootTimer = 0.1f; // 设置射击间隔为0.1秒
+			shootTimer = 0.01f; // 设置射击间隔为0.1秒
         }
         
     }
@@ -99,26 +121,31 @@ void Game::Update(float DeltaTime)
 	{
         
         if (enemy->Blood > 4000.0f) {
-            //第一阶段 环形弹幕
+            //第一阶段 环形弹幕+扇形
             if (enemyShootTimer<= 0.0f) {
-                bp.ShootRing(enemy->Position.x, enemy->Position.y, 150.0f, 90, Game::enemyBullets);
-                enemyShootTimer = 0.2f; // 设置射击间隔为1秒
+                bp.ShootRing(enemy->Position.x, enemy->Position.y, 100.0f, 90, enemyBullets);
+                bp.ShootSector(enemy->Position.x, enemy->Position.y, 75.0f, enemyBullets);
+                enemyShootTimer = 0.2f; // 设置射击间隔为0.2秒
+                enemyShootTimer = 0.2f; // 设置射击间隔为0.2秒
+               
             }
         }
         else if (enemy->Blood > 2000.0f) {
             //第二阶段 扇形弹幕 
             if (enemyShootTimer  <= 0.0f) {
-                bp.ShootSector(enemy->Position.x, enemy->Position.y, 200.0f, Game::enemyBullets);
-                enemyShootTimer= 0.2f; // 设置射击间隔为1.5秒
+                bp.ShootSector(enemy->Position.x, enemy->Position.y, 200.0f, enemyBullets);
+                enemyShootTimer= 0.1f; // 设置射击间隔为0.1秒
+                bp.ShootSector_2(enemy->Position.x, enemy->Position.y, 200.0f, enemyBullets);
+                enemyShootTimer = 0.17f; // 设置射击间隔为0.1秒
             }
         }
         else {
             //第三阶段 螺旋弹幕
             if (enemyShootTimer <= 0.0f) {
                 static float spiralAngle = 0.0f;
-                bp.ShootSpiral(enemy->Position.x, enemy->Position.y, 250.0f, spiralAngle, 30, Game::enemyBullets);
-                spiralAngle += M_PI / 12; // 每次发射后增加角度，形成螺旋效果
-                enemyShootTimer = 0.2f; // 设置射击间隔为0.2秒
+                bp.ShootSpiral(enemy->Position.x, enemy->Position.y, 50.0f, spiralAngle,1 , enemyBullets);
+                spiralAngle += M_PI / 60; // 每次发射后增加角度，形成螺旋效果
+                enemyShootTimer = 0.01f; // 设置射击间隔为0.2秒
             }
         }
        
@@ -138,7 +165,7 @@ void Game::Update(float DeltaTime)
             if (!enemy->active)continue;
             if (bullet->CheckCollision(enemy)) 
             {
-                enemy->active = false;
+                bullet->active = false;
 				enemy->hit(player->attack_point);
                 if (enemy->GetBlood() <= 0) 
                 {
@@ -149,6 +176,7 @@ void Game::Update(float DeltaTime)
     }
 
 	//(2)敌人子弹与玩家碰撞检测
+    bool is_dead = false;
     for (auto& bullet : enemyBullets) 
     {
         if (!bullet->active) continue;
@@ -159,7 +187,8 @@ void Game::Update(float DeltaTime)
             if (player->Dead_judge()) 
             {
                 
-                std::cout << "坏喵坏喵，输了喵。";
+                if(!is_dead)std::cout << "输了喵。"<<'\n';
+				is_dead = true;
 				is_Running = false;
 
             }
@@ -191,7 +220,7 @@ void Game::Update(float DeltaTime)
 
     if (Enemies.empty()) 
     {
-		std::cout << "恭喜喵，赢了喵!!!!主人是最棒的!!!";
+		std::cout << "恭喜喵，赢了喵!!!!主人是最棒的!!!"<<std::endl;
 		is_Running = false;
     }
 
@@ -210,7 +239,7 @@ void Game::Render()
     //敌人
     for (auto& enemy : Enemies) 
     {
-        SDL_SetRenderDrawColor(cur_Renderer, 255, 0, 0, 255);
+        SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 0, 255);
         SDL_Rect enemyRect = { (int)enemy->Position.x - enemy->radius, (int)enemy->Position.y - enemy->radius, (int)enemy->radius * 2, (int)enemy->radius * 2 };
         SDL_RenderFillRect(cur_Renderer, &enemyRect);
     }
@@ -233,7 +262,7 @@ void Game::Clean()
 {
     SDL_DestroyRenderer(cur_Renderer);
     SDL_DestroyWindow(cur_Window);
-    SDL_Delay(5000);
+    SDL_Delay(1000);
     SDL_Quit();
 
     std::cout << "游戏清理完毕！" << std::endl;
@@ -247,4 +276,11 @@ void Game::Clean()
 
     for (auto& bullet : enemyBullets) delete bullet;
     enemyBullets.clear();
+}
+
+void Game::StartDialogue(const std::vector<DialogueLine>& Lines) 
+{
+    DialoueQueue = Lines;
+    cur_index = 0;
+	CurrentState = State::DIALOGUE;
 }

@@ -3,6 +3,7 @@
 #include "Bullet.h"
 #include <vector>
 #include <cmath>
+#include<iostream>
 
 //弹幕分为环形 扇形 螺旋形 三种基本类型
 //直线型可以通过扇形进行变形
@@ -36,7 +37,19 @@ public:
 	{
 		int bullet_cnt = 45;
 		for (int i = 0; i < bullet_cnt; i++) {
-			float n_angle = (float)i / bullet_cnt * M_PI / 2 - M_PI / 4;
+			float n_angle = (float)i / bullet_cnt * M_PI;
+			float speed_x = now_v * cos(n_angle);
+			float speed_y = now_v * sin(n_angle);
+			Bullet* new_bullet = new Bullet(now_x, now_y, speed_x, speed_y);
+			Enemy_bullets.push_back(new_bullet);
+		}
+	}
+
+	void ShootSector_2(float now_x, float now_y, float now_v, std::vector<Bullet*>& Enemy_bullets)
+	{
+		int bullet_cnt = 60;
+		for (int i = 0; i < bullet_cnt; i++) {
+			float n_angle = (float)i / bullet_cnt * M_PI;
 			float speed_x = now_v * cos(n_angle);
 			float speed_y = now_v * sin(n_angle);
 			Bullet* new_bullet = new Bullet(now_x, now_y, speed_x, speed_y);
@@ -63,5 +76,6 @@ public:
 		float speed_y = -now_v;
 		Bullet* new_bullet = new Bullet(now_x, now_y, speed_x, speed_y);
 		player_bullets.push_back(new_bullet);
+		//std::cout << "ShootStraight: pushing bullet at (" << now_x << "," << now_y << ")\n";
 	}
 };

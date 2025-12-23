@@ -13,7 +13,7 @@ public:
 	//计时器相关变量
 	Uint32 lastTime;
 	float shootTimer;
-	Enemy(float x, float y) :Entity(x, y, 3), Blood(6000.0f),attack_point(1.0f) {
+	Enemy(float x, float y) :Entity(x, y, 100), Blood(6000.0f),attack_point(1.0f) {
 		active = true;
 	}
 

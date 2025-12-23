@@ -45,8 +45,8 @@ public:
 		}
 
 		//¼ì²âÊÇ·ñ³ö½ç
-		if (Position.y > 640 || Position.y < 0 ||
-			Position.x > 480 || Position.x < 0) {
+		if (Position.x > 640 || Position.x < 0 ||
+			Position.y > 480 || Position.y< 0) {
 			active = false;
 		}
 	}
