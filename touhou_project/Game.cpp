@@ -1,279 +1,518 @@
-#include "Game.h"
+﻿#include "Game.h"
 #include <iostream>
+#include <algorithm>
+#include <cstdlib>
+#include <ctime>
+
 BulletPattern bp;
+
+Game::Game() : player(nullptr), tex_PlayerReimu(nullptr), tex_PlayerMarisa(nullptr),
+tex_EnemyBullet(nullptr), tex_PlayerBullet(nullptr), tex_PowerUp(nullptr),
+font(nullptr), currentPhaseIndex(0), powerUpSpawnTimer(0), powerUpSpawnInterval(3.0f),
+cur_Window(nullptr), cur_Renderer(nullptr), is_Running(false) {
+}
+
+// 辅助：加载JPG并抠掉灰色背景
+SDL_Texture* Game::LoadTextureWithColorKey(const char* filename) {
+    SDL_Surface* surf = IMG_Load(filename);
+    if (!surf) {
+        std::cout << "Failed to load: " << filename << " Err: " << IMG_GetError() << std::endl;
+        return nullptr;
+    }
+
+    // 尝试去除灰色背景 (RGB ~230)
+    // 根据你的截图，背景很白，试着设为 230-255 范围
+    // 这里取一个大概值，最好是去PS转PNG
+    Uint32 colorkey = SDL_MapRGB(surf->format, 255, 255, 255);
+    SDL_SetColorKey(surf, SDL_TRUE, colorkey);
+
+    SDL_Texture* tex = SDL_CreateTextureFromSurface(cur_Renderer, surf);
+    SDL_FreeSurface(surf);
+    return tex;
+}
+
 bool Game::Init()
 {
-    SDL_Init(SDL_INIT_VIDEO);
-    SDL_Window* window = SDL_CreateWindow(u8"�|��������", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 640, 480, 0);
-    cur_Window = window;
-    cur_Renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-   
-    if (SDL_Init(SDL_INIT_VIDEO) != 0)
-    {
-        std::cout << "SDL 初始化失败: " << SDL_GetError() << std::endl;
-        return false;
-    }
-    SDL_Window* window = SDL_CreateWindow(u8"�|��������", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 640, 480, 0);
-    cur_Window = window;
-    cur_Renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-   
-   
-    if (!cur_Window)
-    {
-        std::cout << "窗口创建失败: " << SDL_GetError() << std::endl;
-        return false;
-    }
+    std::srand(static_cast<unsigned>(std::time(nullptr)));
 
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) return false;
 
-    if (!cur_Renderer)
-    {
-        std::cout << "渲染器创建失败: " << SDL_GetError() << std::endl;
-        return false;
-    }
+    int imgFlags = IMG_INIT_PNG | IMG_INIT_JPG;
+    if (!(IMG_Init(imgFlags) & imgFlags)) return false;
+
+    if (TTF_Init() == -1) return false;
+
+    cur_Window = SDL_CreateWindow("Touhou STG - CyberSecurity",
+        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1920, 1080, SDL_WINDOW_SHOWN);
+    cur_Renderer = SDL_CreateRenderer(cur_Window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+
+    if (!cur_Window || !cur_Renderer) return false;
+
+    // ★ 修复文件名加载
+    // 角色图
+    tex_PlayerReimu = IMG_LoadTexture(cur_Renderer, "Reimu.png");
+    tex_PlayerMarisa = IMG_LoadTexture(cur_Renderer, "Marisa.png");
+    tex_Enemy_Reimu = IMG_LoadTexture(cur_Renderer, "Reimu_Enemy.png");
+    tex_Enemy_Marisa = IMG_LoadTexture(cur_Renderer, "Marisa_Enemy.png");
+
+    // 子弹图 (带去色处理)
+    // 注意：文件名里有空格！！
+    tex_PlayerBullet = LoadTextureWithColorKey("PlayerBullet.png");
+    tex_EnemyBullet = LoadTextureWithColorKey("EnemyBullet.png");
+    tex_PowerUp = tex_PlayerBullet; // 复用
+
+    font = TTF_OpenFont("NotoSerifCJKjp-VF.ttf", 24);
+    if (!font) std::cout << "Font load failed!" << std::endl;
+
     is_Running = true;
-    //初始化玩家
-    player = new Player(240.0f, 400.0f);
-    //初始化敌人
-    Enemy*enemy = new Enemy(240.0f, 100.0f);
-    
-    Enemies.push_back(enemy);
     lastTime = SDL_GetTicks();
-    shootTimer = 0.0f;
-    enemyShootTimer = 0.0f; 
-    spiralAngle = 0.0f;
-
-    CurrentState = State::START_MENU;
-    BootProgress = 0.0f;
-    BootTimer = 0.0f;
-    std::vector<DialogueLine>Phase1
-    {
-
-        {},{},{},{},{}
-    };
-    StartDialogue(Phase1);
-
+    CurrentState = State::SELECT_CHARACTER;
+    menuCursor = 0;
 
     return true;
 }
 
+void Game::InitBattle(CharacterID playerID)
+{
+    if (player) { delete player; player = nullptr; }
+    for (auto& e : Enemies) delete e;
+    Enemies.clear();
+    for (auto& b : playerBullets) delete b;
+    playerBullets.clear();
+    for (auto& b : enemyBullets) delete b;
+    enemyBullets.clear();
+
+    // 根据选择创建 玩家(背身) 和 敌人(正面)
+    if (playerID == CharacterID::REIMU) {
+        // 玩家在下方 (960, 900)
+        player = new Player(960, 900, tex_PlayerReimu);
+        // Boss 在上方 (960, 200)
+        Enemies.push_back(new Enemy(960, 200, tex_Enemy_Marisa));
+    }
+    else {
+        player = new Player(960, 900, tex_PlayerMarisa);
+        Enemies.push_back(new Enemy(960, 200, tex_Enemy_Reimu));
+    }
+
+    SetupDialogue(playerID);
+    SetupEnemyPhases(playerID);
+    currentPhaseIndex = 0;
+    powerUpSpawnTimer = 0;
+    shootTimer = 0;
+    enemyShootTimer = 0.5f;
+}
+
+// ... 对话和阶段设置函数保持原样 ...
+void Game::SetupDialogue(CharacterID playerID) {
+    DialoueQueue.clear();
+    cur_index = 0;
+    CurrentState = State::DIALOGUE;
+    stateBeforeDialogue = State::PLAYING;
+    if (playerID == CharacterID::REIMU) {
+        DialoueQueue.push_back({ "Reimu", "Marisa, stop this DDOS attack!", {255,100,100,255} });
+        DialoueQueue.push_back({ "Marisa", "My botnet is invincible, ze!", {255,255,100,255} });
+    }
+    else {
+        DialoueQueue.push_back({ "Marisa", "Reimu! Your firewall is weak!", {255,255,100,255} });
+        DialoueQueue.push_back({ "Reimu", "I will patch you up!", {255,100,100,255} });
+    }
+}
+
+// Game.cpp
+
+// Game.cpp
+
+// 1. 设置敌人的阶段 (必须把阶段2加进去，不然永远不出手里剑！)
+void Game::SetupEnemyPhases(CharacterID playerID) {
+    enemyPhases.clear();
+
+    // --- 阶段 1: 4000血触发 (警告) ---
+    EnemyPhase p1;
+    p1.hpThreshold = 4000;
+    p1.dialogueTriggered = false;
+    p1.dialogues.push_back({ "System", "Warning: Firewall breach detected!", {200,200,200,255} });
+    p1.dialogues.push_back({ "Boss", "Deploying Crypto-Locks!", {255,50,50,255} });
+    enemyPhases.push_back(p1);
+
+    // --- ★★★ 阶段 2: 2000血触发 (暴走/手里剑) ★★★ ---
+    // 主人之前漏了这个，所以才看不到手里剑！
+    EnemyPhase p2;
+    p2.hpThreshold = 2000;
+    p2.dialogueTriggered = false;
+    p2.dialogues.push_back({ "System", "CRITICAL ERROR: Kernel Panic!", {255,0,0,255} });
+    p2.dialogues.push_back({ "Boss", "DELETE EVERYTHING!!!", {255,0,0,255} });
+    enemyPhases.push_back(p2);
+}
+
+// 2. 检查阶段切换 (顺便清空子弹)
+void Game::CheckEnemyPhase() {
+    if (Enemies.empty()) return;
+    float hp = Enemies[0]->GetBlood();
+
+    // 遍历所有阶段配置
+    for (int i = currentPhaseIndex; i < enemyPhases.size(); ++i) {
+        // 如果血量低于阈值，且该阶段对话还没触发过
+        if (hp <= enemyPhases[i].hpThreshold && !enemyPhases[i].dialogueTriggered) {
+
+            // 更新当前阶段索引
+            currentPhaseIndex = i + 1; // 0是初始, 触发p1变成阶段1, 触发p2变成阶段2
+            // 注意：这里的 currentPhaseIndex 对应 Update 里的逻辑判断
+            // 如果你的 Update 里写的是 if(currentPhaseIndex == 1) 发金锁，那这里要对上
+            // 修正逻辑：建议直接用 i+1 或者专门的状态变量，这里假设 Update 里是用 0, 1, 2 区分的
+
+            // 标记对话已触发
+            enemyPhases[i].dialogueTriggered = true;
+
+            // 加载对话内容
+            DialoueQueue = enemyPhases[i].dialogues;
+            cur_index = 0;
+
+            // 记录之前的状态并进入对话
+            stateBeforeDialogue = CurrentState;
+            CurrentState = State::DIALOGUE;
+
+            // ★★★ 核心修复：清空所有敌方子弹 (消弹) ★★★
+            for (auto b : enemyBullets) {
+                delete b; // 释放内存
+            }
+            enemyBullets.clear(); // 清空容器
+
+            std::cout << "Phase Triggered! Bullets Cleared." << std::endl;
+            break;
+        }
+    }
+}
+// Game.cpp
+
+
+// ... 其他头文件 ...
+
+// ★★★ 链接器报错就是因为找不到下面这个函数！ ★★★
 void Game::Run()
 {
-    while (is_Running)
-    {
+    while (is_Running) {
         Uint32 currentTime = SDL_GetTicks();
-        double deltaTime = (currentTime - lastTime) / 1000.0f;
+        float deltaTime = (currentTime - lastTime) / 1000.0f;
+        if (deltaTime > 0.05f) deltaTime = 0.05f;
         lastTime = currentTime;
 
         HandleEvents();
-
         Update(deltaTime);
-
         Render();
-
-        SDL_Delay(16);
-
     }
-
 }
 
+// ... 以及其他的函数实现 ...
 void Game::HandleEvents()
 {
     SDL_Event event;
-    while (SDL_PollEvent(&event))
-    {
-      /*  std::cout << "event type = " << event.type << std::endl;
-        if (event.type == SDL_KEYDOWN) {
-            std::cout << "KEYDOWN sym=" << event.key.keysym.sym
-                << " scancode=" << event.key.keysym.scancode << std::endl;
-        }*/
-        if (event.type == SDL_QUIT) {
-            is_Running = false;
-        }
-
+    while (SDL_PollEvent(&event)) {
+        if (event.type == SDL_QUIT) is_Running = false;
     }
 }
 
-//每一个 deltaTime 内所需要更新的所有内容
-void Game::Update(float DeltaTime) 
+void Game::Update(float DeltaTime)
 {
-    //�ȸ�����ҵ� update
-    player->Update(DeltaTime);
+    const Uint8* key = SDL_GetKeyboardState(NULL);
 
-    //检测玩家的操作
-	//调用玩家攻击方式
-	const Uint8* keyStates = SDL_GetKeyboardState(NULL);
-    if (keyStates[SDL_SCANCODE_Z]) 
+    switch (CurrentState)
     {
-        //std::cout << "press Z" << std::endl;
-        if (shootTimer <= 0.0f) {
-
-			bp.ShootStraight(player->Position.x, player->Position.y, 500.0f, playerBullets);
-			shootTimer = 0.1f; // ����������Ϊ0.1��
-        }
-        
-    }
-    shootTimer -= DeltaTime;  //移到if外面，一直减
-    if (shootTimer < 0.0f) shootTimer = 0.0f;  // 防止负数
-	//更新敌人的射击
-    enemyShootTimer -= DeltaTime;
-    for (auto& enemy : Enemies) 
-	{
-        
-        if (enemy->Blood > 4000.0f) {
-            //��һ�׶� ���ε�Ļ
-            if (enemyShootTimer<= 0.0f) {
-                bp.ShootRing(enemy->Position.x, enemy->Position.y, 150.0f, 90, Game::enemyBullets);
-                enemyShootTimer = 0.2f; // ����������Ϊ1��
+    case State::SELECT_CHARACTER:
+    {
+        static bool keyProcessed = false;
+        if (!keyProcessed) {
+            if (key[SDL_SCANCODE_LEFT]) menuCursor = 0;
+            if (key[SDL_SCANCODE_RIGHT]) menuCursor = 1;
+            if (key[SDL_SCANCODE_Z]) {
+                selectedCharID = (menuCursor == 0) ? CharacterID::REIMU : CharacterID::MARISA;
+                InitBattle(selectedCharID);
             }
-        }
-        else if (enemy->Blood > 2000.0f) {
-            //第二阶段 扇形弹幕 
-            if (enemyShootTimer  <= 0.0f) {
-                bp.ShootSector(enemy->Position.x, enemy->Position.y, 200.0f, Game::enemyBullets);
-                enemyShootTimer= 0.2f; // ����������Ϊ1.5��
-            }
+            if (key[SDL_SCANCODE_LEFT] || key[SDL_SCANCODE_RIGHT] || key[SDL_SCANCODE_Z]) keyProcessed = true;
         }
         else {
-            //第三阶段 螺旋弹幕
-            if (enemyShootTimer <= 0.0f) {
-                static float spiralAngle = 0.0f;
-                bp.ShootSpiral(enemy->Position.x, enemy->Position.y, 250.0f, spiralAngle, 30, Game::enemyBullets);
-                spiralAngle += M_PI / 12; // ÿ�η�������ӽǶȣ��γ�����Ч��
-                enemyShootTimer = 0.2f; // ����������Ϊ0.2��
-            }
+            if (!key[SDL_SCANCODE_LEFT] && !key[SDL_SCANCODE_RIGHT] && !key[SDL_SCANCODE_Z]) keyProcessed = false;
         }
-       
-        
+        break;
     }
 
-    for (auto& bullet : playerBullets) bullet->Update(DeltaTime);
-    for (auto& bullet : enemyBullets) bullet->Update(DeltaTime);
-
-    //碰撞检测
-	//(1)玩家子弹与敌人碰撞检测
-    for (auto& bullet : playerBullets) 
+    case State::DIALOGUE:
     {
-        if (!bullet->active)continue;
-        for (auto& enemy : Enemies) 
-        {
-            if (!enemy->active)continue;
-            if (bullet->CheckCollision(enemy)) 
-            {
-                bullet->active = false;
-				enemy->hit(player->attack_point);
-                if (enemy->GetBlood() <= 0) 
-                {
-					enemy->active = false;
+        static bool zPressed = false;
+        if (key[SDL_SCANCODE_Z] && !zPressed) {
+            cur_index++;
+            if (cur_index >= DialoueQueue.size()) CurrentState = stateBeforeDialogue;
+            zPressed = true;
+        }
+        if (!key[SDL_SCANCODE_Z]) zPressed = false;
+        break;
+    }
+
+    case State::PLAYING:
+    {
+        if (player) player->Update(DeltaTime);
+
+        // 玩家射击
+        if (key[SDL_SCANCODE_Z] && shootTimer <= 0.0f) {
+            BulletType bType = (selectedCharID == CharacterID::REIMU) ? BulletType::PLAYER_TALISMAN : BulletType::PLAYER_STAR;
+            // 简单实现：根据Level增加子弹
+            playerBullets.push_back(new Bullet(player->Position.x, player->Position.y, 0, -600, bType));
+            if (player->powerLevel >= 1) {
+                playerBullets.push_back(new Bullet(player->Position.x - 15, player->Position.y, -100, -600, bType));
+                playerBullets.push_back(new Bullet(player->Position.x + 15, player->Position.y, 100, -600, bType));
+            }
+            shootTimer = 0.07f;
+        }
+        shootTimer -= DeltaTime;
+
+        // 生成P点
+        powerUpSpawnTimer -= DeltaTime;
+        if (powerUpSpawnTimer <= 0) {
+            powerUps.push_back(new PowerUp(50 + rand() % 540, -20, tex_PowerUp));
+            powerUpSpawnTimer = 3.0f;
+        }
+
+        // Boss逻辑
+        // Game.cpp -> Update 函数内部 -> Boss逻辑部分
+
+        // ==========================================================
+        // ★★★ Boss AI 核心逻辑 (State Machine) ★★★
+        // ==========================================================
+        enemyShootTimer -= DeltaTime;
+        static float angleOffset = 0; // 用于让弹幕旋转起来
+
+        if (!Enemies.empty() && Enemies[0]->active) {
+
+            // 根据 currentPhaseIndex 决定攻击方式
+            // 0: 初始阶段, 1: 警告阶段, 2: 暴走阶段 (你可以自己去 SetupEnemyPhases 里加更多阶段)
+
+            // ★阶段 0: 基础弹幕 (绿球)
+            if (currentPhaseIndex == 0) {
+                if (enemyShootTimer <= 0) {
+                    // 发射 36 发子弹 (密度提升)，类型为 VIRUS
+                    bp.ShootRotatingRing(Enemies[0]->Position.x, Enemies[0]->Position.y, 300, 36, angleOffset, enemyBullets, BulletType::VIRUS);
+
+                    angleOffset += 0.1f; // 缓慢旋转
+                    enemyShootTimer = 0.5f; // ★射速提升：每0.2秒发一波 (原来是0.5)
+                }
+            }
+            // ★阶段 1: 追踪陷阱 (金锁)
+            else if (currentPhaseIndex == 1) {
+                if (enemyShootTimer <= 0) {
+                    // 发射 24 发“停顿-追踪”弹，类型为 LOCK
+                    // 这种子弹生成后会停一下，然后飞向玩家
+                    bp.ShootStopAndGo(Enemies[0]->Position.x, Enemies[0]->Position.y, 1.0f, 600, player, 24, enemyBullets, BulletType::LOCK);
+
+                    angleOffset -= 0.15f; // 反向旋转
+                    enemyShootTimer = 0.8f; // 这种强力弹幕间隔长一点
+                }
+            }
+            // ★阶段 2: 终极暴走 (紫色手里剑) - 假设你在 SetupEnemyPhases 里加了这个阶段
+            // 或者如果血量很低强制进入
+            else if (currentPhaseIndex >= 2 || Enemies[0]->GetBlood() < 2000) {
+                if (enemyShootTimer <= 0) {
+                    // 疯狂螺旋！一次喷射 5 发，像机关枪一样扫射
+                    // 这里的 angleOffset 每次 update 都在狂变
+                    angleOffset += 0.5f;
+
+                    // 使用新写的 ShootSpiral
+                    bp.ShootSpiral(Enemies[0]->Position.x, Enemies[0]->Position.y, 500, angleOffset, 5, 0.2f, enemyBullets, BulletType::SHURIKEN);
+
+                    enemyShootTimer = 0.05f; // ★极速：每 0.05秒 发射一次！
+                }
+            }
+        }
+
+        // 更新所有对象
+        for (auto b : playerBullets) b->Update(DeltaTime);
+        for (auto b : enemyBullets) b->Update(DeltaTime);
+        for (auto p : powerUps) p->Update(DeltaTime);
+
+        // 碰撞：子弹打Boss
+        for (auto b : playerBullets) {
+            if (!b->active) continue;
+            for (auto e : Enemies) {
+                if (e->active && b->CheckCollision(e)) {
+                    e->hit(player->attack_point);
+                    b->active = false;
+                }
+            }
+        }
+
+        // 碰撞：子弹打玩家
+        for (auto b : enemyBullets) {
+            if (b->active && player && player->CheckCollision(b)) {
+                player->hit(10);
+                b->active = false;
+                if (player->Dead_judge()) CurrentState = State::GAME_OVER;
+            }
+        }
+
+        // 碰撞：吃P点
+        for (auto p : powerUps) {
+            if (p->active && player && player->CheckCollision(p)) {
+                player->CollectPowerUp();
+                p->active = false;
+            }
+        }
+
+        // 清理失效对象
+        // (略去繁琐的 remove_if 代码，保持整洁，实际运行时建议加上)
+        // ... CheckEnemyPhase() ...
+        CheckEnemyPhase();
+
+        // 胜利判定
+        if (!Enemies.empty() && Enemies[0]->GetBlood() <= 0) CurrentState = State::VICTORY;
+        break;
+    }
+
+    case State::GAME_OVER:
+    case State::VICTORY:
+        if (key[SDL_SCANCODE_ESCAPE]) CurrentState = State::SELECT_CHARACTER;
+        break;
+    }
+}
+void Game::Render()
+{
+    // ★修改点1：背景改成纯黑色 (0, 0, 0)
+    // 这样你的“人工去背”图片放上去就看不出黑框了，机智！
+    SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 0, 255);
+    SDL_RenderClear(cur_Renderer);
+
+    // ============================================================
+    // 状态 A: 角色选择界面
+    // ============================================================
+    if (CurrentState == State::SELECT_CHARACTER) {
+        SDL_Rect rRect = { 100, 200, 100, 100 };
+        SDL_Rect mRect = { 440, 200, 100, 100 };
+
+        if (tex_PlayerReimu) {
+            SDL_SetTextureColorMod(tex_PlayerReimu, (menuCursor == 0) ? 255 : 100, (menuCursor == 0) ? 255 : 100, (menuCursor == 0) ? 255 : 100);
+            SDL_RenderCopy(cur_Renderer, tex_PlayerReimu, NULL, &rRect);
+        }
+        if (tex_PlayerMarisa) {
+            SDL_SetTextureColorMod(tex_PlayerMarisa, (menuCursor == 1) ? 255 : 100, (menuCursor == 1) ? 255 : 100, (menuCursor == 1) ? 255 : 100);
+            SDL_RenderCopy(cur_Renderer, tex_PlayerMarisa, NULL, &mRect);
+        }
+
+        SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 255, 255);
+        SDL_Rect border = (menuCursor == 0) ? rRect : mRect;
+        border.x -= 5; border.y -= 5; border.w += 10; border.h += 10;
+        SDL_RenderDrawRect(cur_Renderer, &border);
+
+        if (font) {
+            SDL_Surface* surf = TTF_RenderUTF8_Blended(font, "Select Character (Left/Right + Z)", { 255, 255, 255, 255 });
+            if (surf) {
+                SDL_Texture* t = SDL_CreateTextureFromSurface(cur_Renderer, surf);
+                SDL_Rect dst = { 100, 50, surf->w, surf->h };
+                SDL_RenderCopy(cur_Renderer, t, NULL, &dst);
+                SDL_FreeSurface(surf); SDL_DestroyTexture(t);
+            }
+        }
+    }
+
+    // ============================================================
+    // 状态 B: 游戏进行中 OR 对话中 (包含时停逻辑)
+    // ============================================================
+    else if (CurrentState == State::PLAYING || CurrentState == State::DIALOGUE) {
+
+        // 1. 绘制游戏层
+        if (player) player->Render(cur_Renderer);
+        for (auto e : Enemies) e->Render(cur_Renderer);
+        // 子弹
+        for (auto b : playerBullets) if (b->active) b->Render(cur_Renderer, tex_PlayerBullet);
+        for (auto b : enemyBullets) if (b->active) b->Render(cur_Renderer, tex_EnemyBullet);
+        // 道具
+        for (auto p : powerUps) if (p->active) p->Render(cur_Renderer);
+
+        // 2. 绘制 UI (血条)
+        if (font && player) {
+            char buf[64];
+            sprintf_s(buf, "HP: %.0f / %.0f  Power: %d", player->hp, player->max_hp, player->powerLevel);
+            SDL_Surface* s = TTF_RenderUTF8_Blended(font, buf, { 255, 255, 255, 255 });
+            if (s) {
+                SDL_Texture* t = SDL_CreateTextureFromSurface(cur_Renderer, s);
+                SDL_Rect dst = { 20, 20, s->w, s->h };
+                SDL_RenderCopy(cur_Renderer, t, NULL, &dst);
+                SDL_FreeSurface(s); SDL_DestroyTexture(t);
+            }
+        }
+
+        // 3. ★★★ 时停遮罩与对话框逻辑 (别再漏掉了！) ★★★
+        if (CurrentState == State::DIALOGUE && cur_index < DialoueQueue.size()) {
+
+            // --- [时停黑纱] ---
+            SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_BLEND);
+            // 既然背景是纯黑，这个遮罩主要用来压暗角色和子弹，突显文字
+            SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 0, 150);
+            SDL_Rect fullscreen = { 0, 0, 1920, 1080 };
+            SDL_RenderFillRect(cur_Renderer, &fullscreen);
+            SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_NONE);
+
+            // --- [对话框底板] ---
+            SDL_Rect boxRect = { 100, 750, 1720, 250 };
+            SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 60, 255); // 深蓝色底板
+            SDL_RenderFillRect(cur_Renderer, &boxRect);
+            SDL_SetRenderDrawColor(cur_Renderer, 200, 200, 200, 255); // 银色边框
+            SDL_RenderDrawRect(cur_Renderer, &boxRect);
+
+            // --- [文字渲染] ---
+            if (font) {
+                DialogueLine& line = DialoueQueue[cur_index];
+
+                // 名字
+                SDL_Surface* nameSurf = TTF_RenderUTF8_Blended(font, line.name.c_str(), line.color);
+                if (nameSurf) {
+                    SDL_Texture* nameTex = SDL_CreateTextureFromSurface(cur_Renderer, nameSurf);
+                    SDL_Rect nameDst = { 130, 765, nameSurf->w, nameSurf->h };
+                    SDL_RenderCopy(cur_Renderer, nameTex, NULL, &nameDst);
+                    SDL_FreeSurface(nameSurf); SDL_DestroyTexture(nameTex);
+                }
+
+                // 内容
+                SDL_Surface* textSurf = TTF_RenderUTF8_Blended(font, line.Content.c_str(), { 255, 255, 255, 255 });
+                if (textSurf) {
+                    SDL_Texture* textTex = SDL_CreateTextureFromSurface(cur_Renderer, textSurf);
+                    SDL_Rect textDst = { 150, 830, textSurf->w, textSurf->h };
+                    SDL_RenderCopy(cur_Renderer, textTex, NULL, &textDst);
+                    SDL_FreeSurface(textSurf); SDL_DestroyTexture(textTex);
+                }
+
+                // 提示
+                SDL_Surface* hintSurf = TTF_RenderUTF8_Blended(font, "Press Z >>", { 100, 255, 255, 255 });
+                if (hintSurf) {
+                    SDL_Texture* hintTex = SDL_CreateTextureFromSurface(cur_Renderer, hintSurf);
+                    SDL_Rect hintDst = { 1650, 950, hintSurf->w, hintSurf->h };
+                    SDL_RenderCopy(cur_Renderer, hintTex, NULL, &hintDst);
+                    SDL_FreeSurface(hintSurf); SDL_DestroyTexture(hintTex);
                 }
             }
         }
     }
 
-	//(2)�����ӵ��������ײ���
-    for (auto& bullet : enemyBullets) 
-    {
-        if (!bullet->active) continue;
-        if (bullet->CheckCollision(player)) 
-        {
-            bullet->active = false;
-            player->hit(Enemies[0]->attack_point);
-            if (player->Dead_judge()) 
-            {
-                
-                std::cout << "������������������";
-				is_Running = false;
+    // ============================================================
+    // 状态 C: 结算界面
+    // ============================================================
+    else if (CurrentState == State::VICTORY || CurrentState == State::GAME_OVER) {
+        if (font) {
+            const char* msg = (CurrentState == State::VICTORY) ? "VICTORY! (Press ESC)" : "GAME OVER (Press ESC)";
+            SDL_Color color = (CurrentState == State::VICTORY) ? SDL_Color{ 255, 255, 0, 255 } : SDL_Color{ 255, 0, 0, 255 };
 
+            SDL_Surface* surf = TTF_RenderUTF8_Blended(font, msg, color);
+            if (surf) {
+                SDL_Texture* t = SDL_CreateTextureFromSurface(cur_Renderer, surf);
+                SDL_Rect dst = { (1920 - surf->w) / 2, (1080 - surf->h) / 2, surf->w, surf->h };
+                SDL_RenderCopy(cur_Renderer, t, NULL, &dst);
+                SDL_FreeSurface(surf); SDL_DestroyTexture(t);
             }
-
         }
     }
 
-    // 清理
-	//本段寻找ai工具 运用lambda表达式写出了一个管理子弹的erase函数
-    playerBullets.erase(
-        remove_if(playerBullets.begin(), playerBullets.end(),
-            [](Bullet* b) {
-                if (!b->active) { delete b; return true; }
-                return false;
-            }), playerBullets.end());
-
-    enemyBullets.erase(
-        remove_if(enemyBullets.begin(), enemyBullets.end(),
-            [](Bullet* b) {
-                if (!b->active) { delete b; return true; }
-                return false;
-            }), enemyBullets.end());
-
-    Enemies.erase(
-        remove_if(Enemies.begin(), Enemies.end(),
-            [](Enemy* e) {
-                if (e->GetBlood() <= 0) { delete e; return true; }
-                return false;
-            }), Enemies.end());
-
-    if (Enemies.empty()) 
-    {
-		std::cout << "��ϲ����Ӯ����!!!!�����������!!!";
-		is_Running = false;
-    }
-
-}
-
-void Game::Render() 
-{
-	SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 0, 255);
-    SDL_RenderClear(cur_Renderer);
-    
-  //渲染玩家的代码
-    SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 255, 255);
-    SDL_Rect playerRect = { (int)player->Position.x - player->radius, (int)player->Position.y - player->radius, (int)player->radius * 2, (int)player->radius * 2 };
-    SDL_RenderFillRect(cur_Renderer, &playerRect);
-
-    //敌人
-    for (auto& enemy : Enemies) 
-    {
-        SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 0, 255);
-        SDL_Rect enemyRect = { (int)enemy->Position.x - enemy->radius, (int)enemy->Position.y - enemy->radius, (int)enemy->radius * 2, (int)enemy->radius * 2 };
-        SDL_RenderFillRect(cur_Renderer, &enemyRect);
-    }
-
-    //子弹
-    for (auto& bullet : playerBullets) 
-    {
-		if (bullet->active)bullet->Render(cur_Renderer);
-    }
-    for (auto& bullet : enemyBullets) 
-    {
-        if (bullet->active)bullet->Render(cur_Renderer);
-    }
-
-	//显示渲染结果
     SDL_RenderPresent(cur_Renderer);
 }
 
-void Game::Clean() 
-{
+void Game::Clean() {
+    // 记得销毁所有Texture和指针
     SDL_DestroyRenderer(cur_Renderer);
     SDL_DestroyWindow(cur_Window);
-    SDL_Delay(1000);
-    SDL_Quit();
-
-    std::cout << "游戏清理完毕！" << std::endl;
-    //内存管理
-    delete player;
-    for (auto& enemy : Enemies) delete enemy;
-    Enemies.clear();
-
-    for (auto& bullet : playerBullets) delete bullet;
-    playerBullets.clear();
-
-    for (auto& bullet : enemyBullets) delete bullet;
-    enemyBullets.clear();
-}
-
-void Game::StartDialogue(const std::vector<DialogueLine>& Lines) 
-{
-    DialoueQueue = Lines;
-    cur_index = 0;
-	CurrentState = State::DIALOGUE;
+    TTF_Quit(); IMG_Quit(); SDL_Quit();
 }

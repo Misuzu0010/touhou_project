@@ -1,81 +1,51 @@
 #pragma once
-
 #include "Bullet.h"
 #include <vector>
 #include <cmath>
-#include<iostream>
 
-//弹幕分为环形 扇形 螺旋形 三种基本类型
-//直线型可以通过扇形进行变形
-//第一部分 环形弹幕
-//先想好一个环形需要多少子弹来形成 
-//考虑到碰撞体积 我需要保证子弹跑到玩家之前有一定的间隔进行躲避
-//即以敌人为中心 向周围周期性发射环形子弹
-//每隔一段时间发射一次
-//同时 考虑到连贯性 不存在说发射到一定数量就停止发射的情况
-//用于存储每一个子弹的指针
-//函数实现部分
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
-//环形弹幕
 class BulletPattern
 {
 public:
-	void ShootRing(float now_x, float now_y, float now_v, int bullet_cnt, std::vector<Bullet*>& Enemy_bullets)
-	{
-		for (int i = 0; i <= bullet_cnt; i++)
-		{
-			float angle = (float)i / bullet_cnt * 2 * M_PI;
-			float speed_x = now_v * cos(angle);
-			float speed_y = now_v * sin(angle);
-			Bullet* new_bullet = new Bullet(now_x, now_y, speed_x, speed_y);
-			Enemy_bullets.push_back(new_bullet);
-		}
-	}
+    // ★修改1：增加了 type 参数，默认是 VIRUS
+    // 这是一个“通用环形弹幕”，可以通过 bullet_cnt 控制密度
+    void ShootRotatingRing(float now_x, float now_y, float now_v, int bullet_cnt, float offset_angle, std::vector<Bullet*>& bullets, BulletType type = BulletType::VIRUS)
+    {
+        for (int i = 0; i < bullet_cnt; i++) {
+            float angle = ((float)i / bullet_cnt * 2 * M_PI) + offset_angle;
+            float vx = now_v * std::cos(angle);
+            float vy = now_v * std::sin(angle);
+            // 这里使用传入的 type，而不是写死
+            bullets.push_back(new Bullet(now_x, now_y, vx, vy, type));
+        }
+    }
 
-	//第二部分 扇形弹幕
-	void ShootSector(float now_x, float now_y, float now_v, std::vector<Bullet*>& Enemy_bullets)
-	{
-		int bullet_cnt = 45;
-		for (int i = 0; i < bullet_cnt; i++) {
-			float n_angle = (float)i / bullet_cnt * M_PI;
-			float speed_x = now_v * cos(n_angle);
-			float speed_y = now_v * sin(n_angle);
-			Bullet* new_bullet = new Bullet(now_x, now_y, speed_x, speed_y);
-			Enemy_bullets.push_back(new_bullet);
-		}
-	}
+    // ★新增：螺旋弹幕 (高密度压制用)
+    // 这种弹幕不是一次发一圈，而是像水管浇水一样快速旋转喷射
+    void ShootSpiral(float now_x, float now_y, float speed, float angle_start, int count, float angle_step, std::vector<Bullet*>& bullets, BulletType type)
+    {
+        for (int i = 0; i < count; i++) {
+            float angle = angle_start + (i * angle_step); // 角度递增
+            float vx = speed * std::cos(angle);
+            float vy = speed * std::sin(angle);
+            bullets.push_back(new Bullet(now_x, now_y, vx, vy, type));
+        }
+    }
 
-	void ShootSector_2(float now_x, float now_y, float now_v, std::vector<Bullet*>& Enemy_bullets)
-	{
-		int bullet_cnt = 60;
-		for (int i = 0; i < bullet_cnt; i++) {
-			float n_angle = (float)i / bullet_cnt * M_PI;
-			float speed_x = now_v * cos(n_angle);
-			float speed_y = now_v * sin(n_angle);
-			Bullet* new_bullet = new Bullet(now_x, now_y, speed_x, speed_y);
-			Enemy_bullets.push_back(new_bullet);
-		}
-	}
+    // 以前的 StopAndGo 也可以保留，稍微改造一下支持类型
+    void ShootStopAndGo(float now_x, float now_y, float waitTime, float speed, Player* player, int bullet_cnt, std::vector<Bullet*>& bullets, BulletType type = BulletType::LOCK)
+    {
+        for (int i = 0; i < bullet_cnt; i++)
+        {
+            float angle = (float)i / bullet_cnt * 2 * M_PI;
+            float dist = 60.0f;
+            float spawn_x = now_x + dist * std::cos(angle);
+            float spawn_y = now_y + dist * std::sin(angle);
 
-	//boss用 螺旋发射子弹
-	void ShootSpiral(float now_x, float now_y, float now_v, float n_angle, int bullet_cnt, std::vector<Bullet*>& Enemy_bullets)
-	{
-		for (int i = 0; i < bullet_cnt; i++) {
-			float upd_angle = (float)n_angle + i * 2 * M_PI / 60;
-			float speed_x = now_v * cos(upd_angle);
-			float speed_y = now_v * sin(upd_angle);
-			Bullet* new_bullet = new Bullet(now_x, now_y, speed_x, speed_y);
-			Enemy_bullets.push_back(new_bullet);
-		}
-	}
-
-	//player用 直线发射子弹
-	void ShootStraight(float now_x, float now_y, float now_v, std::vector<Bullet*>& player_bullets)
-	{
-		float speed_x = 0;
-		float speed_y = -now_v;
-		Bullet* new_bullet = new Bullet(now_x, now_y, speed_x, speed_y);
-		player_bullets.push_back(new_bullet);
-		//std::cout << "ShootStraight: pushing bullet at (" << now_x << "," << now_y << ")\n";
-	}
+            bullets.push_back(new Bullet(spawn_x, spawn_y, waitTime, speed, player, type));
+        }
+    }
 };

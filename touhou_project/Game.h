@@ -1,81 +1,92 @@
 #pragma once
-#include<SDL.h>
+#include <SDL.h>
+#include <SDL_image.h>
+#include <SDL_ttf.h>
 #include <vector>
+#include <string>
 #include "Player.h"
 #include "Enemy.h"
 #include "Bullet.h"
-#include"BulletPattern.h"
+#include "BulletPattern.h"
+#include "PowerUp.h"
 
-enum class State
-{
-	START_MENU,
-	PLAYING,
-	DIALOGUE,
-	GAME_OVER,
-	VICTORY
+enum class State {
+    SELECT_CHARACTER,
+    DIALOGUE,
+    PLAYING,
+    GAME_OVER,
+    VICTORY
 };
-struct DialogueLine
-{
-	std::string name;
-	std::string Content;
-	SDL_Color color;
 
+enum class CharacterID { REIMU = 0, MARISA = 1 };
+
+struct DialogueLine {
+    std::string name;
+    std::string Content;
+    SDL_Color color;
 };
-class Game 
+
+struct EnemyPhase {
+    float hpThreshold;
+    bool dialogueTriggered;
+    std::vector<DialogueLine> dialogues;
+};
+
+class Game
 {
 public:
-	State CurrentState;
+    State CurrentState;
+    std::vector<DialogueLine> DialoueQueue;
+    int cur_index;
 
-	std::vector<DialogueLine>DialoueQueue;
-	int cur_index;
+    SDL_Window* cur_Window;
+    SDL_Renderer* cur_Renderer;
+    bool is_Running;
 
+    // 资源
+    SDL_Texture* tex_PlayerReimu;  // 背身
+    SDL_Texture* tex_PlayerMarisa; // 背身
+    SDL_Texture* tex_Enemy_Reimu;  // 正面
+    SDL_Texture* tex_Enemy_Marisa; // 正面
+    SDL_Texture* tex_EnemyBullet;
+    SDL_Texture* tex_PlayerBullet;
+    SDL_Texture* tex_PowerUp;
+    TTF_Font* font;
 
-	//检测是否正常载入
-	bool Init();
+    // 游戏对象
+    Player* player;
+    std::vector<Enemy*> Enemies;
+    std::vector<Bullet*> playerBullets;
+    std::vector<Bullet*> enemyBullets;
+    std::vector<PowerUp*> powerUps;
 
-	//运行游戏主循环
-	void Run();
+    // 逻辑控制
+    int menuCursor;
+    CharacterID selectedCharID;
+    std::vector<EnemyPhase> enemyPhases;
+    int currentPhaseIndex;
+    State stateBeforeDialogue;
 
-	//清理资源
-	void Clean();
+    Uint32 lastTime;
+    float shootTimer;
+    float enemyShootTimer;
+    float powerUpSpawnTimer;
+    float powerUpSpawnInterval;
 
-	//处理遇到的各种事件
-	void HandleEvents();
+    Game();
+    bool Init();
+    void Run();
+    void Clean();
+    void HandleEvents();
+    void Update(float DeltaTime);
+    void Render();
 
-	//更新人物 弹幕的位置
-	void Update(float DeltaTime);
+    void InitBattle(CharacterID playerID);
+    void SetupDialogue(CharacterID playerID);
+    void SetupEnemyPhases(CharacterID playerID);
+    void CheckEnemyPhase();
+    void TriggerPhaseDialogue(int phaseIndex);
 
-	//渲染当前游戏画面
-	void Render();
-
-	void StartDialogue(const std::vector<DialogueLine>& DialogueQueue);
-
-	//指向游戏窗口的指针，负责管理游戏窗口的创建、显示和销毁
-	SDL_Window* cur_Window;
-
-	//指向渲染器的指针，负责管理游戏图形的渲染和显示
-	SDL_Renderer* cur_Renderer;
-
-	//游戏是否在运行的标志
-	bool is_Running;
-
-	//玩家指针
-	Player* player;
-	
-	//敌人指针
-	std::vector<Enemy*>Enemies;
-
-	//子弹存储
-	std::vector<Bullet*> playerBullets;  // 不限数量
-	std::vector<Bullet*> enemyBullets;   // 最多限750
-
-	Uint32 lastTime;
-	float shootTimer;       // 玩家用
-	float enemyShootTimer;  // 敌人用
-	float spiralAngle;
-
-	//启动画面相关
-	float BootProgress;
-	float BootTimer;
-
+    // 辅助函数：加载图片并去色
+    SDL_Texture* LoadTextureWithColorKey(const char* filename);
 };

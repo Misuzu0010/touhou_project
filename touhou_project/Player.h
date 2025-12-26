@@ -1,71 +1,105 @@
 #pragma once
 #include "Entity.h"
-#include "BulletPattern.h"
 #include <SDL.h>
+#include <iostream>
 
 class Player : public Entity
 {
 public:
-	//基本属性
-	float Blood;
-	//攻击力	
-	float attack_point;
+    float hp;
+    float max_hp;
+    int powerLevel;
+    int powerCount;
+    float attack_point;
+    SDL_Texture* texture;
 
-	Player(float x, float y) :Entity(x, y, 3), Blood(100.0f), attack_point(5.0f) { active=true; }
-
-	//计时器相关变量
-	Uint32 lastTime;
-	float shootTimer;
-	
-    void Update(float deltaTime) override
+    // ★修改点1：构造函数中，radius 设为 3.0f (判定点极小)
+    // 即使图片很大，只有这 3 像素的半径会触发碰撞
+    Player(float x, float y, SDL_Texture* tex)
+        : Entity(x, y, 3.0f), hp(100), max_hp(100), powerLevel(0), powerCount(0), attack_point(20), texture(tex)
     {
-        // 1. 归零速度
-        Velocity.x = 0;
-        Velocity.y = 0;
-
-        // 2. 调整基础速度（建议改快点！）
-        float speed = 300.0f;
-
-        const Uint8* keyStates = SDL_GetKeyboardState(NULL);
-
-        // 3. Y轴逻辑 (W/上 减坐标，S/下 加坐标)
-        float dirY = 0.0f;
-        if (keyStates[SDL_SCANCODE_W] || keyStates[SDL_SCANCODE_UP])    dirY -= 1.0f;
-        if (keyStates[SDL_SCANCODE_S] || keyStates[SDL_SCANCODE_DOWN])  dirY += 1.0f;
-
-        // 4. X轴逻辑 (A/左 减坐标，D/右 加坐标)
-        float dirX = 0.0f;
-        if (keyStates[SDL_SCANCODE_A] || keyStates[SDL_SCANCODE_LEFT])  dirX -= 1.0f;
-        if (keyStates[SDL_SCANCODE_D] || keyStates[SDL_SCANCODE_RIGHT]) dirX += 1.0f;
-
-        // 5. 应用速度 (简单的防斜向加速归一化可以以后做，先保证基础移动)
-        Velocity.x = dirX * speed;
-        Velocity.y = dirY * speed;
-
-        // 6. 调用父类更新位置
-        Entity::Update(deltaTime);
-
-        // 7. 边界限制 (保持你原来的代码)
-        if (Position.x < 0) Position.x = 0;
-        if (Position.x > 640) Position.x = 640;
-        if (Position.y < 0) Position.y = 0;
-        if (Position.y > 480) Position.y = 480;
     }
 
-	void hit(float damage) 
-	{
-		Blood -= damage;
-	}
-	bool Dead_judge() 
-	{
-		return Blood <= 0.0f;
-	}
+    ~Player() {}
 
-	float get_hp()
-	{
-		return Blood;
-	}
+    void Update(float deltaTime) override
+    {
+        const Uint8* key = SDL_GetKeyboardState(NULL);
 
-	
-	
+        // ★修改点2：1080P下的速度调整
+        // 普通速度 800，按住 Shift 减半
+        float baseSpeed = 800.0f;
+        if (key[SDL_SCANCODE_LSHIFT]) baseSpeed = 400.0f;
+
+        if (key[SDL_SCANCODE_UP]) Position.y -= baseSpeed * deltaTime;
+        if (key[SDL_SCANCODE_DOWN]) Position.y += baseSpeed * deltaTime;
+        if (key[SDL_SCANCODE_LEFT]) Position.x -= baseSpeed * deltaTime;
+        if (key[SDL_SCANCODE_RIGHT]) Position.x += baseSpeed * deltaTime;
+
+        // ★修改点3：1920x1080 的边界限制
+        // 留出一点边距，别让角色完全跑出屏幕
+        if (Position.x < 30) Position.x = 30;
+        if (Position.x > 1890) Position.x = 1890;
+        if (Position.y < 30) Position.y = 30;
+        if (Position.y > 1050) Position.y = 1050;
+    }
+
+    void Render(SDL_Renderer* renderer) override
+    {
+        if (texture) {
+            // 1. 获取原图大小 (比如 1280x1706)
+            int texW, texH;
+            SDL_QueryTexture(texture, NULL, NULL, &texW, &texH);
+
+            // 2. 计算显示大小 (强制缩放)
+            // 假设我们希望角色在 1080P 屏幕上高约 100 像素，保持比例
+            // 宽高比 = texW / texH
+            float aspect = (float)texW / texH;
+            int displayH = 100; // 设定高度
+            int displayW = (int)(displayH * aspect); // 自动算宽度
+
+            // 3. 绘制角色立绘
+            // destRect 的中心点应该是 Position
+            SDL_Rect dest = {
+                (int)Position.x - displayW / 2,
+                (int)Position.y - displayH / 2,
+                displayW,
+                displayH
+            };
+
+            // srcRect 为 NULL 表示画整张原图
+            SDL_RenderCopy(renderer, texture, NULL, &dest);
+
+            // ★修改点4：绘制判定点 (Hitbox)
+            // 只有按下 Shift (低速模式) 时才显示，这是 STG 的传统！
+            const Uint8* key = SDL_GetKeyboardState(NULL);
+            if (key[SDL_SCANCODE_LSHIFT]) {
+                // 画一个鲜艳的实心方块/圆点
+                SDL_SetRenderDrawColor(renderer, 255, 50, 50, 255); // 亮红色
+                int hitboxSize = 8; // 视觉上的判定点大小 (比实际碰撞半径稍大一点点好辨认)
+                SDL_Rect hitRect = {
+                    (int)Position.x - hitboxSize / 2,
+                    (int)Position.y - hitboxSize / 2,
+                    hitboxSize,
+                    hitboxSize
+                };
+                SDL_RenderFillRect(renderer, &hitRect);
+
+                // 再画个白框框住红点，更显眼
+                SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+                SDL_RenderDrawRect(renderer, &hitRect);
+            }
+        }
+    }
+
+    void hit(float damage) { hp -= damage; }
+    bool Dead_judge() { return hp <= 0; }
+    float get_hp() { return hp; }
+
+    void CollectPowerUp() {
+        powerCount++;
+        if (powerCount % 10 == 0 && powerLevel < 3) powerLevel++;
+        hp += 5;
+        if (hp > max_hp) hp = max_hp;
+    }
 };

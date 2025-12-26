@@ -102,13 +102,14 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>D:\SDL2-devel-2.32.10-VC\SDL2-2.32.10\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>D:\SDL2-devel-2.32.10-VC\SDL2-2.32.10\include;D:\SDL2_image-devel-2.8.5-VC\SDL2_image-2.8.5\include;D:\SDL_ttf\SDL2_ttf-2.24.0\include</AdditionalIncludeDirectories>
+      <LanguageStandard>Default</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>D:\SDL2-devel-2.32.10-VC\SDL2-2.32.10\lib\x64</AdditionalLibraryDirectories>
-      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);SDL2.lib;SDL2main.lib;</AdditionalDependencies>
+      <AdditionalLibraryDirectories> D:\SDL2-devel-2.32.10-VC\SDL2-2.32.10\lib\x64;D:\SDL2_image-devel-2.8.5-VC\SDL2_image-2.8.5\lib\x64;D:\SDL_ttf\SDL2_ttf-2.24.0\lib\x64</AdditionalLibraryDirectories>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);SDL2.lib;SDL2main.lib;SDL2_image.lib;SDL2_ttf.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -119,15 +120,20 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>D:\SDL2-devel-2.32.10-VC\SDL2-2.32.10\include;D:\SDL2_image-devel-2.8.5-VC\SDL2_image-2.8.5\include;D:\SDL_ttf\SDL2_ttf-2.24.0\include</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories> D:\SDL2-devel-2.32.10-VC\SDL2-2.32.10\lib\x64;D:\SDL2_image-devel-2.8.5-VC\SDL2_image-2.8.5\lib\x64;D:\SDL_ttf\SDL2_ttf-2.24.0\lib\x64</AdditionalLibraryDirectories>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);SDL2.lib;SDL2main.lib;SDL2_image.lib;SDL2_ttf.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Bullet.cpp" />
     <ClCompile Include="Game.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Player.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Bullet.h" />
@@ -136,6 +142,7 @@
     <ClInclude Include="Entity.h" />
     <ClInclude Include="Game.h" />
     <ClInclude Include="Player.h" />
+    <ClInclude Include="PowerUp.h" />
     <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>
