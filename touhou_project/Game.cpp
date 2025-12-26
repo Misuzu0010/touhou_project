@@ -118,10 +118,6 @@ void Game::SetupDialogue(CharacterID playerID) {
     }
 }
 
-// Game.cpp
-
-// Game.cpp
-
 // 1. 设置敌人的阶段 (必须把阶段2加进去，不然永远不出手里剑！)
 void Game::SetupEnemyPhases(CharacterID playerID) {
     enemyPhases.clear();
