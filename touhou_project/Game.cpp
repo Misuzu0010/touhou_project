@@ -67,7 +67,7 @@ bool Game::Init()
 
     is_Running = true;
     lastTime = SDL_GetTicks();
-    CurrentState = State::SELECT_CHARACTER;
+    CurrentState = State::MAIN_MENU;
     menuCursor = 0;
 
     return true;
@@ -205,29 +205,57 @@ void Game::HandleEvents()
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_QUIT) is_Running = false;
+
     }
 }
 
 void Game::Update(float DeltaTime)
 {
     const Uint8* key = SDL_GetKeyboardState(NULL);
+    static bool keyLock = false;
 
     switch (CurrentState)
     {
+    case State::MAIN_MENU:
+    {
+        if (!keyLock) {
+            if (key[SDL_SCANCODE_UP]) {
+                if (menuSelect > 0) menuSelect--;
+                keyLock = true;
+            }
+            if (key[SDL_SCANCODE_DOWN]) {
+				if (menuSelect < 1) menuSelect++; // 目前只有两个按钮：开始和退出  后续可以根据主菜单功能加更多
+                keyLock = true;
+            }
+            if (key[SDL_SCANCODE_Z]) {
+                if (menuSelect == 0) CurrentState = State::SELECT_CHARACTER;
+                else if (menuSelect == 1) is_Running = false;
+                keyLock = true;
+            }
+            
+        }
+
+        // 当所有按键都松开时，解锁
+        if (!key[SDL_SCANCODE_UP] && !key[SDL_SCANCODE_DOWN] && !key[SDL_SCANCODE_Z]) {
+            keyLock = false;
+        }
+        break;
+    }
+
     case State::SELECT_CHARACTER:
     {
-        static bool keyProcessed = false;
-        if (!keyProcessed) {
+
+        if (!keyLock) {
             if (key[SDL_SCANCODE_LEFT]) menuCursor = 0;
             if (key[SDL_SCANCODE_RIGHT]) menuCursor = 1;
             if (key[SDL_SCANCODE_Z]) {
                 selectedCharID = (menuCursor == 0) ? CharacterID::REIMU : CharacterID::MARISA;
                 InitBattle(selectedCharID);
             }
-            if (key[SDL_SCANCODE_LEFT] || key[SDL_SCANCODE_RIGHT] || key[SDL_SCANCODE_Z]) keyProcessed = true;
+            if (key[SDL_SCANCODE_LEFT] || key[SDL_SCANCODE_RIGHT] || key[SDL_SCANCODE_Z]) keyLock = true;
         }
         else {
-            if (!key[SDL_SCANCODE_LEFT] && !key[SDL_SCANCODE_RIGHT] && !key[SDL_SCANCODE_Z]) keyProcessed = false;
+            if (!key[SDL_SCANCODE_LEFT] && !key[SDL_SCANCODE_RIGHT] && !key[SDL_SCANCODE_Z]) keyLock = false;
         }
         break;
     }
@@ -364,7 +392,7 @@ void Game::Update(float DeltaTime)
 
     case State::GAME_OVER:
     case State::VICTORY:
-        if (key[SDL_SCANCODE_ESCAPE]) CurrentState = State::SELECT_CHARACTER;
+        if (key[SDL_SCANCODE_ESCAPE]) CurrentState = State::MAIN_MENU;
         break;
     }
 }
@@ -374,7 +402,61 @@ void Game::Render()
     // 这样你的“人工去背”图片放上去就看不出黑框了，机智！
     SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 0, 255);
     SDL_RenderClear(cur_Renderer);
+    if (CurrentState == State::MAIN_MENU) {
+        if (font) {
+            // --- [1. 绘制游戏大标题] ---
+            SDL_Color white = { 255, 255, 255, 255 };
+            SDL_Surface* titleSurf = TTF_RenderUTF8_Blended(font, "东方项目：代码之变", white);
+            if (titleSurf) {
+                SDL_Texture* titleTex = SDL_CreateTextureFromSurface(cur_Renderer, titleSurf);
+                // 将标题放大并居中（1920x1080屏幕）
+                SDL_Rect titleRect = { (1920 - titleSurf->w * 2) / 2, 250, titleSurf->w * 2, titleSurf->h * 2 };
+                SDL_RenderCopy(cur_Renderer, titleTex, NULL, &titleRect);
+                SDL_FreeSurface(titleSurf); SDL_DestroyTexture(titleTex);
+            }
 
+            // --- [2. 绘制选项：开始游戏] ---
+            // 根据 menuSelect 是否为 0 来决定颜色：选中为黄色，未选中为灰色
+            SDL_Color colorStart = (menuSelect == 0) ? SDL_Color{ 255, 255, 0, 255 } : SDL_Color{ 150, 150, 150, 255 };
+            SDL_Surface* s1 = TTF_RenderUTF8_Blended(font, "开始防火墙检测 (START)", colorStart);
+            if (s1) {
+                SDL_Texture* t1 = SDL_CreateTextureFromSurface(cur_Renderer, s1);
+                SDL_Rect r1 = { (1920 - s1->w) / 2, 600, s1->w, s1->h };
+                SDL_RenderCopy(cur_Renderer, t1, NULL, &r1);
+
+                // 如果选中，在左侧画一个小箭头或指示符
+                if (menuSelect == 0) {
+                    SDL_Rect pointer = { r1.x - 50, r1.y + 5, 30, 30 };
+                    SDL_RenderFillRect(cur_Renderer, &pointer); // 也可以贴一张灵梦的头像图
+                }
+                SDL_FreeSurface(s1); SDL_DestroyTexture(t1);
+            }
+
+            // --- [3. 绘制选项：退出游戏] ---
+            SDL_Color colorQuit = (menuSelect == 1) ? SDL_Color{ 255, 255, 0, 255 } : SDL_Color{ 150, 150, 150, 255 };
+            SDL_Surface* s2 = TTF_RenderUTF8_Blended(font, "断开连接 (QUIT)", colorQuit);
+            if (s2) {
+                SDL_Texture* t2 = SDL_CreateTextureFromSurface(cur_Renderer, s2);
+                SDL_Rect r2 = { (1920 - s2->w) / 2, 720, s2->w, s2->h };
+                SDL_RenderCopy(cur_Renderer, t2, NULL, &r2);
+
+                if (menuSelect == 1) {
+                    SDL_Rect pointer = { r2.x - 50, r2.y + 5, 30, 30 };
+                    SDL_RenderFillRect(cur_Renderer, &pointer);
+                }
+                SDL_FreeSurface(s2); SDL_DestroyTexture(t2);
+            }
+
+            // --- [4. 绘制页脚提示] ---
+            SDL_Surface* hint = TTF_RenderUTF8_Blended(font, "使用方向键切换，Z 键确认", { 100, 100, 100, 255 });
+            if (hint) {
+                SDL_Texture* hTex = SDL_CreateTextureFromSurface(cur_Renderer, hint);
+                SDL_Rect hRect = { (1920 - hint->w) / 2, 950, hint->w, hint->h };
+                SDL_RenderCopy(cur_Renderer, hTex, NULL, &hRect);
+                SDL_FreeSurface(hint); SDL_DestroyTexture(hTex);
+            }
+        }
+    }
     // ============================================================
     // 状态 A: 角色选择界面
     // ============================================================

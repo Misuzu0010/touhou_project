@@ -11,6 +11,7 @@
 #include "PowerUp.h"
 
 enum class State {
+    MAIN_MENU,
     SELECT_CHARACTER,
     DIALOGUE,
     PLAYING,
@@ -61,6 +62,7 @@ public:
     std::vector<PowerUp*> powerUps;
 
     // Âß¼­¿ØÖÆ
+    int menuSelect = 0;
     int menuCursor;
     CharacterID selectedCharID;
     std::vector<EnemyPhase> enemyPhases;
