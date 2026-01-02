@@ -1,4 +1,5 @@
-﻿#include "Game.h"
+﻿#pragma execution_character_set("utf-8")  //解决中文不显示问题
+#include "Game.h"
 #include <iostream>
 #include <algorithm>
 #include <cstdlib>
@@ -61,7 +62,7 @@ bool Game::Init()
     tex_EnemyBullet = LoadTextureWithColorKey("EnemyBullet.png");
     tex_PowerUp = tex_PlayerBullet; // 复用
 
-    font = TTF_OpenFont("NotoSerifCJKjp-VF.ttf", 24);
+    font = TTF_OpenFont("assets\\fonts\\SimHei.ttf", 24);
     if (!font) std::cout << "Font load failed!" << std::endl;
 
     is_Running = true;
@@ -109,12 +110,12 @@ void Game::SetupDialogue(CharacterID playerID) {
     CurrentState = State::DIALOGUE;
     stateBeforeDialogue = State::PLAYING;
     if (playerID == CharacterID::REIMU) {
-        DialoueQueue.push_back({ "Reimu", "Marisa, stop this DDOS attack!", {255,100,100,255} });
-        DialoueQueue.push_back({ "Marisa", "My botnet is invincible, ze!", {255,255,100,255} });
+        DialoueQueue.push_back({ "Reimu", "魔理沙，快停止这场 DDOS 攻击！", {255,100,100,255} });
+        DialoueQueue.push_back({ "Marisa", "嘿嘿，我的僵尸网络可是无懈可击的，DAZE！", {255,255,100,255} });
     }
     else {
-        DialoueQueue.push_back({ "Marisa", "Reimu! Your firewall is weak!", {255,255,100,255} });
-        DialoueQueue.push_back({ "Reimu", "I will patch you up!", {255,100,100,255} });
+        DialoueQueue.push_back({ "Marisa", "灵梦！你的防火墙太脆弱了！", {255,255,100,255} });
+        DialoueQueue.push_back({ "Reimu", "那就由我来给你打个补丁吧！", {255,100,100,255} });
     }
 }
 
@@ -126,8 +127,8 @@ void Game::SetupEnemyPhases(CharacterID playerID) {
     EnemyPhase p1;
     p1.hpThreshold = 4000;
     p1.dialogueTriggered = false;
-    p1.dialogues.push_back({ "System", "Warning: Firewall breach detected!", {200,200,200,255} });
-    p1.dialogues.push_back({ "Boss", "Deploying Crypto-Locks!", {255,50,50,255} });
+    p1.dialogues.push_back({ "System", "警告：检测到防火墙被突破！", {200,200,200,255} });
+    p1.dialogues.push_back({ "Boss", "部署加密锁，把你的数据都锁死吧！", {255,50,50,255} });
     enemyPhases.push_back(p1);
 
     // --- ★★★ 阶段 2: 2000血触发 (暴走/手里剑) ★★★ ---
@@ -135,8 +136,8 @@ void Game::SetupEnemyPhases(CharacterID playerID) {
     EnemyPhase p2;
     p2.hpThreshold = 2000;
     p2.dialogueTriggered = false;
-    p2.dialogues.push_back({ "System", "CRITICAL ERROR: Kernel Panic!", {255,0,0,255} });
-    p2.dialogues.push_back({ "Boss", "DELETE EVERYTHING!!!", {255,0,0,255} });
+    p2.dialogues.push_back({ "System", "严重错误：内核异常！", {255,0,0,255} });
+    p2.dialogues.push_back({ "Boss", "格式化所有分区！全！部！删！除！", {255,0,0,255} });
     enemyPhases.push_back(p2);
 }
 
@@ -396,7 +397,7 @@ void Game::Render()
         SDL_RenderDrawRect(cur_Renderer, &border);
 
         if (font) {
-            SDL_Surface* surf = TTF_RenderUTF8_Blended(font, "Select Character (Left/Right + Z)", { 255, 255, 255, 255 });
+            SDL_Surface* surf = TTF_RenderUTF8_Blended(font, "选择角色(←/→ + Z)", { 255, 255, 255, 255 });
             if (surf) {
                 SDL_Texture* t = SDL_CreateTextureFromSurface(cur_Renderer, surf);
                 SDL_Rect dst = { 100, 50, surf->w, surf->h };
@@ -490,7 +491,7 @@ void Game::Render()
     // ============================================================
     else if (CurrentState == State::VICTORY || CurrentState == State::GAME_OVER) {
         if (font) {
-            const char* msg = (CurrentState == State::VICTORY) ? "VICTORY! (Press ESC)" : "GAME OVER (Press ESC)";
+            const char* msg = (CurrentState == State::VICTORY) ? "VICTORY! (按下ESC返回)" : "满身疮痍 (按下ESC返回)";
             SDL_Color color = (CurrentState == State::VICTORY) ? SDL_Color{ 255, 255, 0, 255 } : SDL_Color{ 255, 0, 0, 255 };
 
             SDL_Surface* surf = TTF_RenderUTF8_Blended(font, msg, color);
