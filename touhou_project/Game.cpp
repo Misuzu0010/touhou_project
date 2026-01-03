@@ -43,6 +43,11 @@ bool Game::Init()
 
     if (TTF_Init() == -1) return false;
 
+    if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
+        std::cout << "SDL_mixer Error: " << Mix_GetError() << std::endl;
+        return false;
+    }
+
     cur_Window = SDL_CreateWindow("Touhou STG - CyberSecurity",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1920, 1080, SDL_WINDOW_SHOWN);
     cur_Renderer = SDL_CreateRenderer(cur_Window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
@@ -62,14 +67,34 @@ bool Game::Init()
     tex_EnemyBullet = LoadTextureWithColorKey("EnemyBullet.png");
     tex_PowerUp = tex_PlayerBullet; // 复用
 
+	//字体加载
     font = TTF_OpenFont("assets\\fonts\\SimHei.ttf", 24);
     if (!font) std::cout << "Font load failed!" << std::endl;
 
+    //bgm加载
+    bgm_Menu = Mix_LoadMUS("assets\\audios\\まらしぃ - 少女眠想曲　～ Dream Battle.mp3");
+    bgm_Battle = Mix_LoadMUS("assets\\audios\\上海アリス幻樂団 - 少女幻葬　～ Necro-Fantasy.mp3");
+    if (!bgm_Menu) std::cout << "BGM Load Failed!" << std::endl;
+
+	//音效加载
+    se_Shoot = Mix_LoadWAV("assets\\sfx\\灵击.wav");
+	se_EnemyShoot = Mix_LoadWAV("assets\\sfx\\弹幕展开tan.wav");
+    //se_Hit = Mix_LoadWAV("assets\\sfx\\命中.wav");
+    se_Dead = Mix_LoadWAV("assets\\sfx\\死亡音效.wav");
+    se_Victory = Mix_LoadWAV("assets\\sfx\\胜利音效.wav");
+	se_PowerUp = Mix_LoadWAV("assets\\sfx\\火力升级.wav");
+    if (!se_Shoot || !se_EnemyShoot ||  !se_Dead || !se_Victory || !se_PowerUp) {
+        std::cout << "SFX Load Failed!" << std::endl;
+	}
+
+	// 初始化游戏状态
     is_Running = true;
     lastTime = SDL_GetTicks();
     CurrentState = State::MAIN_MENU;
     menuCursor = 0;
-
+    Mix_VolumeMusic(bgmVolume);      // 同步背景音乐音量
+    Mix_Volume(-1, sfxVolume);       // 同步所有音效频道的音量 (-1表示所有频道)
+    Mix_PlayMusic(bgm_Menu, -1);
     return true;
 }
 
@@ -224,12 +249,17 @@ void Game::Update(float DeltaTime)
                 keyLock = true;
             }
             if (key[SDL_SCANCODE_DOWN]) {
-				if (menuSelect < 1) menuSelect++; // 目前只有两个按钮：开始和退出  后续可以根据主菜单功能加更多
+				if (menuSelect < 2) menuSelect++; // 目前只有两个按钮：开始和退出  后续可以根据主菜单功能加更多
                 keyLock = true;
             }
             if (key[SDL_SCANCODE_Z]) {
-                if (menuSelect == 0) CurrentState = State::SELECT_CHARACTER;
-                else if (menuSelect == 1) is_Running = false;
+                if (menuSelect == 0) {
+                    CurrentState = State::SELECT_CHARACTER;
+                }
+                else if (menuSelect == 1) {
+                    CurrentState = State::VOLUME_SETTINGS;
+                }
+                else if (menuSelect == 2) is_Running = false;
                 keyLock = true;
             }
             
@@ -242,15 +272,76 @@ void Game::Update(float DeltaTime)
         break;
     }
 
+    case State::VOLUME_SETTINGS:
+    {
+        if (!keyLock) {
+            // 1. 上下键选择调节对象
+            if (key[SDL_SCANCODE_UP]) {
+                if (volMenuSelect > 0) volMenuSelect--;
+                keyLock = true;
+            }
+            else if (key[SDL_SCANCODE_DOWN]) {
+                if (volMenuSelect < 2) volMenuSelect++;
+                keyLock = true;
+            }
+
+            // 2. 左右键调节数值
+            if (volMenuSelect == 0) { // 调节 BGM
+                if (key[SDL_SCANCODE_LEFT] && bgmVolume > 0) {
+                    bgmVolume -= 8;
+                    Mix_VolumeMusic(bgmVolume);
+                    keyLock = true;
+                }
+                if (key[SDL_SCANCODE_RIGHT] && bgmVolume < 128) {
+                    bgmVolume += 8;
+                    Mix_VolumeMusic(bgmVolume);
+                    keyLock = true;
+                }
+            }
+            else if (volMenuSelect == 1) { // 调节音效
+                if (key[SDL_SCANCODE_LEFT] && sfxVolume > 0) {
+                    sfxVolume -= 8;
+                    // Mix_Volume(-1, vol) 调节所有音效频道
+                    Mix_Volume(-1, sfxVolume);
+                    keyLock = true;
+                }
+                if (key[SDL_SCANCODE_RIGHT] && sfxVolume < 128) {
+                    sfxVolume += 8;
+                    Mix_Volume(-1, sfxVolume);
+                    keyLock = true;
+                }
+            }
+
+            // 3. 确认返回
+            if (key[SDL_SCANCODE_Z] || key[SDL_SCANCODE_ESCAPE]) {
+                if (volMenuSelect == 2 || key[SDL_SCANCODE_ESCAPE]) {
+                    CurrentState = State::MAIN_MENU;
+                }
+                keyLock = true;
+            }
+        }
+
+        // 解锁逻辑（确保包含左右键）
+        if (!key[SDL_SCANCODE_UP] && !key[SDL_SCANCODE_DOWN] &&
+            !key[SDL_SCANCODE_LEFT] && !key[SDL_SCANCODE_RIGHT] &&
+            !key[SDL_SCANCODE_Z] && !key[SDL_SCANCODE_ESCAPE]) {
+            keyLock = false;
+        }
+        break;
+    }
+
     case State::SELECT_CHARACTER:
     {
 
         if (!keyLock) {
             if (key[SDL_SCANCODE_LEFT]) menuCursor = 0;
             if (key[SDL_SCANCODE_RIGHT]) menuCursor = 1;
+			if (key[SDL_SCANCODE_ESCAPE]) CurrentState = State::MAIN_MENU;
             if (key[SDL_SCANCODE_Z]) {
                 selectedCharID = (menuCursor == 0) ? CharacterID::REIMU : CharacterID::MARISA;
                 InitBattle(selectedCharID);
+                Mix_FadeOutMusic(500); // 500ms 内淡出
+                Mix_PlayMusic(bgm_Battle, -1);
             }
             if (key[SDL_SCANCODE_LEFT] || key[SDL_SCANCODE_RIGHT] || key[SDL_SCANCODE_Z]) keyLock = true;
         }
@@ -278,6 +369,7 @@ void Game::Update(float DeltaTime)
 
         // 玩家射击
         if (key[SDL_SCANCODE_Z] && shootTimer <= 0.0f) {
+            Mix_PlayChannel(-1, se_Shoot, 0);
             BulletType bType = (selectedCharID == CharacterID::REIMU) ? BulletType::PLAYER_TALISMAN : BulletType::PLAYER_STAR;
             // 简单实现：根据Level增加子弹
             playerBullets.push_back(new Bullet(player->Position.x, player->Position.y, 0, -600, bType));
@@ -306,40 +398,40 @@ void Game::Update(float DeltaTime)
         static float angleOffset = 0; // 用于让弹幕旋转起来
 
         if (!Enemies.empty() && Enemies[0]->active) {
+            if (enemyShootTimer <= 0) {
+                // 根据 currentPhaseIndex 决定攻击方式
+                // 0: 初始阶段, 1: 警告阶段, 2: 暴走阶段 (你可以自己去 SetupEnemyPhases 里加更多阶段)
+                if (se_EnemyShoot) Mix_PlayChannel(-1, se_EnemyShoot, 0);
+                // ★阶段 0: 基础弹幕 (绿球)
+                if (currentPhaseIndex == 0) {
 
-            // 根据 currentPhaseIndex 决定攻击方式
-            // 0: 初始阶段, 1: 警告阶段, 2: 暴走阶段 (你可以自己去 SetupEnemyPhases 里加更多阶段)
-
-            // ★阶段 0: 基础弹幕 (绿球)
-            if (currentPhaseIndex == 0) {
-                if (enemyShootTimer <= 0) {
                     // 发射 36 发子弹 (密度提升)，类型为 VIRUS
                     bp.ShootRotatingRing(Enemies[0]->Position.x, Enemies[0]->Position.y, 300, 36, angleOffset, enemyBullets, BulletType::VIRUS);
 
                     angleOffset += 0.1f; // 缓慢旋转
                     enemyShootTimer = 0.5f; // ★射速提升：每0.2秒发一波 (原来是0.5)
+
                 }
-            }
-            // ★阶段 1: 追踪陷阱 (金锁)
-            else if (currentPhaseIndex == 1) {
-                if (enemyShootTimer <= 0) {
+                // ★阶段 1: 追踪陷阱 (金锁)
+                else if (currentPhaseIndex == 1) {
+
                     // 发射 24 发“停顿-追踪”弹，类型为 LOCK
                     // 这种子弹生成后会停一下，然后飞向玩家
                     bp.ShootStopAndGo(Enemies[0]->Position.x, Enemies[0]->Position.y, 1.0f, 600, player, 24, enemyBullets, BulletType::LOCK);
 
                     angleOffset -= 0.15f; // 反向旋转
                     enemyShootTimer = 0.8f; // 这种强力弹幕间隔长一点
+
                 }
-            }
-            // ★阶段 2: 终极暴走 (紫色手里剑) - 假设你在 SetupEnemyPhases 里加了这个阶段
-            // 或者如果血量很低强制进入
-            else if (currentPhaseIndex >= 2 || Enemies[0]->GetBlood() < 2000) {
-                if (enemyShootTimer <= 0) {
-                    // 疯狂螺旋！一次喷射 5 发，像机关枪一样扫射
-                    // 这里的 angleOffset 每次 update 都在狂变
+                // ★阶段 2: 终极暴走 (紫色手里剑) - 假设你在 SetupEnemyPhases 里加了这个阶段
+                // 或者如果血量很低强制进入
+                else if (currentPhaseIndex >= 2 || Enemies[0]->GetBlood() < 2000) {
+
+                // 疯狂螺旋！一次喷射 5 发，像机关枪一样扫射
+                // 这里的 angleOffset 每次 update 都在狂变
                     angleOffset += 0.5f;
 
-                    // 使用新写的 ShootSpiral
+                // 使用新写的 ShootSpiral
                     bp.ShootSpiral(Enemies[0]->Position.x, Enemies[0]->Position.y, 500, angleOffset, 5, 0.2f, enemyBullets, BulletType::SHURIKEN);
 
                     enemyShootTimer = 0.05f; // ★极速：每 0.05秒 发射一次！
@@ -358,6 +450,7 @@ void Game::Update(float DeltaTime)
             for (auto e : Enemies) {
                 if (e->active && b->CheckCollision(e)) {
                     e->hit(player->attack_point);
+                    //if (se_Hit) Mix_PlayChannel(-1, se_Hit, 0); // 敌人受击声
                     b->active = false;
                 }
             }
@@ -368,14 +461,20 @@ void Game::Update(float DeltaTime)
             if (b->active && player && player->CheckCollision(b)) {
                 player->hit(10);
                 b->active = false;
-                if (player->Dead_judge()) CurrentState = State::GAME_OVER;
+                if (player->Dead_judge()) {
+                    if (se_Dead) Mix_PlayChannel(-1, se_Dead, 0); // 玩家死亡音效
+                    Mix_HaltMusic(); // 停止BGM
+                    CurrentState = State::GAME_OVER;
+                }
             }
         }
 
         // 碰撞：吃P点
         for (auto p : powerUps) {
             if (p->active && player && player->CheckCollision(p)) {
-                player->CollectPowerUp();
+                if (player->CollectPowerUp()) {
+                    if (se_PowerUp) Mix_PlayChannel(-1, se_PowerUp, 0);
+                }
                 p->active = false;
             }
         }
@@ -386,27 +485,47 @@ void Game::Update(float DeltaTime)
         CheckEnemyPhase();
 
         // 胜利判定
-        if (!Enemies.empty() && Enemies[0]->GetBlood() <= 0) CurrentState = State::VICTORY;
+        if (!Enemies.empty() && Enemies[0]->GetBlood() <= 0) {
+            if (se_Victory) Mix_PlayChannel(-1, se_Victory, 0); // 胜利音效
+            Mix_HaltMusic(); // 停止战斗BGM
+            CurrentState = State::VICTORY;
+        }
         break;
     }
 
     case State::GAME_OVER:
     case State::VICTORY:
-        if (key[SDL_SCANCODE_ESCAPE]) CurrentState = State::MAIN_MENU;
-        break;
+        static bool escPressed = false;
+
+        if (key[SDL_SCANCODE_ESCAPE] && !escPressed) {
+            // 1. 切换游戏状态回到主菜单
+            CurrentState = State::MAIN_MENU;
+            menuSelect = 0; // 重置菜单光标到第一项
+
+            // 2. 音乐切换核心代码
+            if (bgm_Menu) {
+                Mix_HaltMusic();             // 停止当前所有正在播放的背景音乐
+                Mix_PlayMusic(bgm_Menu, -1); // 重新循环播放主菜单背景音乐 (-1代表无限循环)
+            }
+            if (!key[SDL_SCANCODE_ESCAPE]) {
+                escPressed = false;
+            }
+            break;
+        }
     }
 }
 void Game::Render()
 {
-    // ★修改点1：背景改成纯黑色 (0, 0, 0)
-    // 这样你的“人工去背”图片放上去就看不出黑框了，机智！
+    // ============================================================
+    // 状态 0: 主菜单
+    // ============================================================
     SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 0, 255);
     SDL_RenderClear(cur_Renderer);
     if (CurrentState == State::MAIN_MENU) {
         if (font) {
             // --- [1. 绘制游戏大标题] ---
             SDL_Color white = { 255, 255, 255, 255 };
-            SDL_Surface* titleSurf = TTF_RenderUTF8_Blended(font, "东方项目：代码之变", white);
+            SDL_Surface* titleSurf = TTF_RenderUTF8_Blended(font, "东方代码乡", white);
             if (titleSurf) {
                 SDL_Texture* titleTex = SDL_CreateTextureFromSurface(cur_Renderer, titleSurf);
                 // 将标题放大并居中（1920x1080屏幕）
@@ -415,39 +534,55 @@ void Game::Render()
                 SDL_FreeSurface(titleSurf); SDL_DestroyTexture(titleTex);
             }
 
-            // --- [2. 绘制选项：开始游戏] ---
-            // 根据 menuSelect 是否为 0 来决定颜色：选中为黄色，未选中为灰色
+            // --- [2. 绘制选项 0：开始游戏] ---
             SDL_Color colorStart = (menuSelect == 0) ? SDL_Color{ 255, 255, 0, 255 } : SDL_Color{ 150, 150, 150, 255 };
             SDL_Surface* s1 = TTF_RenderUTF8_Blended(font, "开始防火墙检测 (START)", colorStart);
             if (s1) {
                 SDL_Texture* t1 = SDL_CreateTextureFromSurface(cur_Renderer, s1);
-                SDL_Rect r1 = { (1920 - s1->w) / 2, 600, s1->w, s1->h };
+                SDL_Rect r1 = { (1920 - s1->w) / 2, 550, s1->w, s1->h }; // 位置上移
                 SDL_RenderCopy(cur_Renderer, t1, NULL, &r1);
 
-                // 如果选中，在左侧画一个小箭头或指示符
                 if (menuSelect == 0) {
+                    SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 0, 255); // 指示器设为黄色
                     SDL_Rect pointer = { r1.x - 50, r1.y + 5, 30, 30 };
-                    SDL_RenderFillRect(cur_Renderer, &pointer); // 也可以贴一张灵梦的头像图
+                    SDL_RenderFillRect(cur_Renderer, &pointer);
                 }
                 SDL_FreeSurface(s1); SDL_DestroyTexture(t1);
             }
 
-            // --- [3. 绘制选项：退出游戏] ---
-            SDL_Color colorQuit = (menuSelect == 1) ? SDL_Color{ 255, 255, 0, 255 } : SDL_Color{ 150, 150, 150, 255 };
+            // --- [3. 绘制选项 1：音量调节] ---
+            SDL_Color colorVol = (menuSelect == 1) ? SDL_Color{ 255, 255, 0, 255 } : SDL_Color{ 150, 150, 150, 255 };
+            SDL_Surface* sVol = TTF_RenderUTF8_Blended(font, "音量设置 (VOLUME)", colorVol);
+            if (sVol) {
+                SDL_Texture* tVol = SDL_CreateTextureFromSurface(cur_Renderer, sVol);
+                SDL_Rect rVol = { (1920 - sVol->w) / 2, 650, sVol->w, sVol->h }; // 位于中间
+                SDL_RenderCopy(cur_Renderer, tVol, NULL, &rVol);
+
+                if (menuSelect == 1) {
+                    SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 0, 255);
+                    SDL_Rect pointer = { rVol.x - 50, rVol.y + 5, 30, 30 };
+                    SDL_RenderFillRect(cur_Renderer, &pointer);
+                }
+                SDL_FreeSurface(sVol); SDL_DestroyTexture(tVol);
+            }
+
+            // --- [4. 绘制选项 2：退出游戏] ---
+            SDL_Color colorQuit = (menuSelect == 2) ? SDL_Color{ 255, 255, 0, 255 } : SDL_Color{ 150, 150, 150, 255 };
             SDL_Surface* s2 = TTF_RenderUTF8_Blended(font, "断开连接 (QUIT)", colorQuit);
             if (s2) {
                 SDL_Texture* t2 = SDL_CreateTextureFromSurface(cur_Renderer, s2);
-                SDL_Rect r2 = { (1920 - s2->w) / 2, 720, s2->w, s2->h };
+                SDL_Rect r2 = { (1920 - s2->w) / 2, 750, s2->w, s2->h };
                 SDL_RenderCopy(cur_Renderer, t2, NULL, &r2);
 
-                if (menuSelect == 1) {
+                if (menuSelect == 2) {
+                    SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 0, 255);
                     SDL_Rect pointer = { r2.x - 50, r2.y + 5, 30, 30 };
                     SDL_RenderFillRect(cur_Renderer, &pointer);
                 }
                 SDL_FreeSurface(s2); SDL_DestroyTexture(t2);
             }
 
-            // --- [4. 绘制页脚提示] ---
+            // --- [5. 绘制页脚提示] ---
             SDL_Surface* hint = TTF_RenderUTF8_Blended(font, "使用方向键切换，Z 键确认", { 100, 100, 100, 255 });
             if (hint) {
                 SDL_Texture* hTex = SDL_CreateTextureFromSurface(cur_Renderer, hint);
@@ -457,6 +592,62 @@ void Game::Render()
             }
         }
     }
+
+    // ============================================================
+    // 状态 1: 音量调节界面
+    // ============================================================
+    if (CurrentState == State::VOLUME_SETTINGS) {
+        if (font) {
+            // --- [1. 背景暗化] ---
+            SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 0, 180);
+            SDL_Rect fullScreen = { 0, 0, 1920, 1080 };
+            SDL_RenderFillRect(cur_Renderer, &fullScreen);
+
+            // --- [2. 绘制标题] ---
+            SDL_Color white = { 255, 255, 255, 255 };
+            SDL_Surface* sT = TTF_RenderUTF8_Blended(font, "音量详细设置", white);
+            if (sT) {
+                SDL_Texture* tT = SDL_CreateTextureFromSurface(cur_Renderer, sT);
+                SDL_Rect rT = { (1920 - sT->w) / 2, 300, sT->w, sT->h };
+                SDL_RenderCopy(cur_Renderer, tT, NULL, &rT);
+                SDL_FreeSurface(sT); SDL_DestroyTexture(tT);
+            }
+
+            // --- [3. 绘制 BGM 调节项] ---
+            SDL_Color colorBGM = (volMenuSelect == 0) ? SDL_Color{ 255, 255, 0, 255 } : SDL_Color{ 150, 150, 150, 255 };
+            std::string bgmStr = "背景音乐 (BGM):  < " + std::to_string(bgmVolume * 100 / 128) + "% >";
+            SDL_Surface* sB = TTF_RenderUTF8_Blended(font, bgmStr.c_str(), colorBGM);
+            if (sB) {
+                SDL_Texture* tB = SDL_CreateTextureFromSurface(cur_Renderer, sB);
+                SDL_Rect rB = { (1920 - sB->w) / 2, 450, sB->w, sB->h };
+                SDL_RenderCopy(cur_Renderer, tB, NULL, &rB);
+                SDL_FreeSurface(sB); SDL_DestroyTexture(tB);
+            }
+
+            // --- [4. 绘制音效调节项] ---
+            SDL_Color colorSFX = (volMenuSelect == 1) ? SDL_Color{ 255, 255, 0, 255 } : SDL_Color{ 150, 150, 150, 255 };
+            std::string sfxStr = "游戏音效 (SFX):  < " + std::to_string(sfxVolume * 100 / 128) + "% >";
+            SDL_Surface* sS = TTF_RenderUTF8_Blended(font, sfxStr.c_str(), colorSFX);
+            if (sS) {
+                SDL_Texture* tS = SDL_CreateTextureFromSurface(cur_Renderer, sS);
+                SDL_Rect rS = { (1920 - sS->w) / 2, 550, sS->w, sS->h };
+                SDL_RenderCopy(cur_Renderer, tS, NULL, &rS);
+                SDL_FreeSurface(sS); SDL_DestroyTexture(tS);
+            }
+
+            // --- [5. 绘制返回选项] ---
+            SDL_Color colorBack = (volMenuSelect == 2) ? SDL_Color{ 255, 255, 0, 255 } : SDL_Color{ 150, 150, 150, 255 };
+            SDL_Surface* sBack = TTF_RenderUTF8_Blended(font, "确认并返回主菜单", colorBack);
+            if (sBack) {
+                SDL_Texture* tBack = SDL_CreateTextureFromSurface(cur_Renderer, sBack);
+                SDL_Rect rBack = { (1920 - sBack->w) / 2, 700, sBack->w, sBack->h };
+                SDL_RenderCopy(cur_Renderer, tBack, NULL, &rBack);
+                SDL_FreeSurface(sBack); SDL_DestroyTexture(tBack);
+            }
+        }
+    }
+
     // ============================================================
     // 状态 A: 角色选择界面
     // ============================================================
@@ -590,6 +781,18 @@ void Game::Render()
 }
 
 void Game::Clean() {
+    // 停止播放并释放音乐资源
+    Mix_HaltMusic();
+    Mix_FreeMusic(bgm_Menu);
+    Mix_FreeMusic(bgm_Battle);
+    Mix_FreeChunk(se_Shoot);
+    Mix_FreeChunk(se_EnemyShoot);
+    //Mix_FreeChunk(se_Hit);
+    Mix_FreeChunk(se_Dead);
+    Mix_FreeChunk(se_Victory);
+    Mix_FreeChunk(se_PowerUp);
+    // 关闭音频设备
+    Mix_CloseAudio();
     // 记得销毁所有Texture和指针
     SDL_DestroyRenderer(cur_Renderer);
     SDL_DestroyWindow(cur_Window);

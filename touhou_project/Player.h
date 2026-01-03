@@ -120,10 +120,14 @@ public:
     void hit(float damage) { hp -= damage; }
     bool Dead_judge() { return hp <= 0; }
     float get_hp() { return hp; }
-    void CollectPowerUp() {
+    int CollectPowerUp() {
         powerCount++;
-        if (powerCount % 10 == 0 && powerLevel < 3) powerLevel++;
         hp += 5;
         if (hp > max_hp) hp = max_hp;
+        if (powerCount % 10 == 0 && powerLevel < 3) {
+            powerLevel++;
+			return 1; // 升级成功
+        }
+		return 0; // 仅回血未升级
     }
 };

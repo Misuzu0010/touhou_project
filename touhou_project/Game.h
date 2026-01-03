@@ -2,6 +2,7 @@
 #include <SDL.h>
 #include <SDL_image.h>
 #include <SDL_ttf.h>
+#include <SDL_mixer.h>
 #include <vector>
 #include <string>
 #include "Player.h"
@@ -12,6 +13,7 @@
 
 enum class State {
     MAIN_MENU,
+    VOLUME_SETTINGS, // 新增：音量设置子界面
     SELECT_CHARACTER,
     DIALOGUE,
     PLAYING,
@@ -44,7 +46,7 @@ public:
     SDL_Renderer* cur_Renderer;
     bool is_Running;
 
-    // 资源
+    //图片
     SDL_Texture* tex_PlayerReimu;  // 背身
     SDL_Texture* tex_PlayerMarisa; // 背身
     SDL_Texture* tex_Enemy_Reimu;  // 正面
@@ -52,7 +54,21 @@ public:
     SDL_Texture* tex_EnemyBullet;
     SDL_Texture* tex_PlayerBullet;
     SDL_Texture* tex_PowerUp;
+    //字体
     TTF_Font* font;
+    //音乐
+    Mix_Music* bgm_Menu = nullptr;   // 主菜单背景音乐
+    Mix_Music* bgm_Battle = nullptr; // 战斗背景音乐
+    //音效
+	Mix_Chunk* se_Shoot = nullptr;
+    Mix_Chunk* se_EnemyShoot = nullptr;
+    //Mix_Chunk* se_Hit = nullptr;
+    Mix_Chunk* se_Dead = nullptr;
+    Mix_Chunk* se_Victory = nullptr;
+    Mix_Chunk* se_PowerUp = nullptr;
+    int bgmVolume = 64; // 初始音量设为一半 (0-128)
+    int sfxVolume = 64;  // 音效音量 (0-128)
+    int volMenuSelect = 0; // 0: 调节BGM, 1: 调节音效, 2: 返回
 
     // 游戏对象
     Player* player;
