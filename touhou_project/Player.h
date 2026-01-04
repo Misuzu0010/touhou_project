@@ -11,6 +11,7 @@ public:
     //float max_hp;
     int lives;
     int powerLevel;
+    int bombs;
     float powerValue;
     float attack_point;
     SDL_Texture* texture;
@@ -25,7 +26,7 @@ public:
     double currentAngle; // µ±«∞«„–±Ω«∂»
 
     Player(float x, float y, SDL_Texture* tex)
-        : Entity(x, y, 3.0f), lives(3), powerLevel(0), powerValue(0.0f), attack_point(20), texture(tex),
+        : Entity(x, y, 3.0f), lives(3), powerLevel(0),bombs(1), powerValue(0.0f), attack_point(20), texture(tex),
         invincTimer(0.0f), isInvincible(false), flashTimer(0.0f)
     {
     }

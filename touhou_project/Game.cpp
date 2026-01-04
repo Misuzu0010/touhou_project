@@ -88,6 +88,8 @@ bool Game::Init()
 	se_PowerUp = Mix_LoadWAV("assets\\sfx\\power_up.wav");
     se_Select= Mix_LoadWAV("assets\\sfx\\select.wav");
     se_BeHitted = Mix_LoadWAV("assets\\sfx\\playerbehitted.wav");
+    se_REIMUBomb = Mix_LoadWAV("assets\\sfx\\reimubomb.wav");
+	se_MARISABomb = Mix_LoadWAV("assets\\sfx\\marisabomb.wav");
     if (!se_Shoot || !se_EnemyShoot1 || !se_EnemyShoot2 || !se_Dead || !se_Victory || !se_PowerUp) {
         std::cout << "SFX Load Failed!" << std::endl;
 	}
@@ -413,6 +415,46 @@ void Game::Update(float DeltaTime)
             powerUps.push_back(new PowerUp(50 + rand() % 540, -20, tex_PowerUp));
             powerUpSpawnTimer = 3.0f;
         }
+        // --- [新增：BOOM 触发器] ---
+        static bool xPressed = false;
+        if (key[SDL_SCANCODE_X] && !xPressed && player->bombs > 0 && !isSpellActive) {
+            player->bombs--;
+            isSpellActive = true;
+            spellTimer = 3.0f; // 符卡持续3秒
+            spellUser = selectedCharID;
+
+            player->isInvincible = true;
+            player->invincTimer = 3.5f; // 无敌略长于符卡
+
+            if (se_REIMUBomb && spellUser == CharacterID::REIMU) Mix_PlayChannel(-1, se_REIMUBomb, 0);
+            if(se_REIMUBomb && spellUser == CharacterID::MARISA) Mix_PlayChannel(-1, se_MARISABomb, 0);
+            xPressed = true;
+        }
+        if (!key[SDL_SCANCODE_X]) xPressed = false;
+        if (!key[SDL_SCANCODE_X]) xPressed = false;
+
+        if (isSpellActive) {
+            spellTimer -= DeltaTime;
+
+            // 持续消弹：符卡期间任何接触到特效区域的子弹都会消失
+            for (auto b : enemyBullets) {
+                if (spellUser == CharacterID::MARISA) {
+                    // 魔理沙：激光范围内的子弹消失
+                    if (abs(b->Position.x - player->Position.x) < 100) b->active = false;
+                }
+                else {
+                    // 灵梦：全屏缓慢消弹
+                    b->active = false;
+                }
+            }
+
+            // 持续伤害
+            for (auto e : Enemies) {
+                if (e->active) e->hit(10); // 每帧造成小额伤害，累计很高
+            }
+
+            if (spellTimer <= 0) isSpellActive = false;
+        }
 
         // Boss逻辑
         // Game.cpp -> Update 函数内部 -> Boss逻辑部分
@@ -623,6 +665,7 @@ void Game::Render()
     SDL_RenderClear(cur_Renderer);
     if (CurrentState == State::MAIN_MENU) {
         if (font) {
+          
             // --- [1. 绘制游戏大标题] ---
             SDL_Color white = { 255, 255, 255, 255 };
             SDL_Surface* titleSurf = TTF_RenderUTF8_Blended(font,"东方代码乡",white);
@@ -805,7 +848,57 @@ void Game::Render()
         for (auto b : enemyBullets) if (b->active) b->Render(cur_Renderer, tex_EnemyBullet);
         // 道具
         for (auto p : powerUps) if (p->active) p->Render(cur_Renderer);
+        //bomb
+        if (isSpellActive) {
+            // --- [1. 背景变暗] ---
+            SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 0, 150);
+            SDL_Rect full = { 0, 0, 1920, 1080 };
+            SDL_RenderFillRect(cur_Renderer, &full);
 
+            // --- [2. 特效绘制] ---
+            if (spellUser == CharacterID::REIMU) {
+                // 灵梦：灵符「梦想封印」
+                // 绘制 8 个巨大的彩色光玉环绕
+                for (int i = 0; i < 8; i++) {
+                    float angle = (spellTimer * 4.0f) + (i * 0.785f);
+                    int dist = 300 - (spellTimer * 50); // 逐渐向中心收缩
+                    int tx = player->Position.x + cos(angle) * dist;
+                    int ty = player->Position.y + sin(angle) * dist;
+
+                    SDL_SetRenderDrawColor(cur_Renderer, 255, 100, 200, 180);
+                    SDL_Rect orb = { tx - 60, ty - 60, 120, 120 };
+                    SDL_RenderFillRect(cur_Renderer, &orb); // 建议换成带光晕的 png
+                }
+            }
+            else if (spellUser == CharacterID::MARISA) {
+                // 魔理沙：恋符「Master Spark」
+                SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_ADD); // 加法混合，超亮！
+                int offsetX = (shakeTime > 0) ? (rand() % 10 - 5) : 0;
+
+                // 激光外壳
+                SDL_SetRenderDrawColor(cur_Renderer, 100, 100, 255, 200);
+                SDL_Rect beamAura = { (int)player->Position.x - 120 + offsetX, 0, 240, (int)player->Position.y };
+                SDL_RenderFillRect(cur_Renderer, &beamAura);
+
+                // 激光核心
+                SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 255, 255);
+                SDL_Rect beamCore = { (int)player->Position.x - 70 + offsetX, 0, 140, (int)player->Position.y };
+                SDL_RenderFillRect(cur_Renderer, &beamCore);
+                SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_BLEND);
+            }
+
+            // --- [3. 符卡名称宣示] ---
+            std::string sName = (spellUser == CharacterID::REIMU) ? "灵符「梦想封印」" : "恋符「Master Spark」";
+            SDL_Surface* sSurf = TTF_RenderUTF8_Blended(font, sName.c_str(), { 255, 255, 255, 255 });
+            if (sSurf) {
+                SDL_Texture* sTex = SDL_CreateTextureFromSurface(cur_Renderer, sSurf);
+                // 名称从右侧滑入
+                SDL_Rect sRect = { 1800 - (int)((3.0f - spellTimer) * 400), 150, sSurf->w, sSurf->h };
+                SDL_RenderCopy(cur_Renderer, sTex, NULL, &sRect);
+                SDL_FreeSurface(sSurf); SDL_DestroyTexture(sTex);
+            }
+        }
         // 2. 绘制 UI (残机与 Power 展示)
         if (font && player) {
             // --- [参数定义] ---
@@ -848,6 +941,19 @@ void Game::Render()
 
                 SDL_FreeSurface(sPower);
                 SDL_DestroyTexture(tPower);
+            }
+            // --- [4. 渲染 Spell Card 数值] ---
+            std::string bombStr = "Spell:  ";
+            for (int i = 0; i < player->bombs; i++) {
+                bombStr += "★ "; // 或者用特定的图标
+            }
+            SDL_Surface* sBomb = TTF_RenderUTF8_Blended(font, bombStr.c_str(), { 100, 255, 100, 255 }); // 绿色
+            if (sBomb) {
+                SDL_Texture* tBomb = SDL_CreateTextureFromSurface(cur_Renderer, sBomb);
+                SDL_Rect rectBomb = { uiX, uiY + 80, sBomb->w, sBomb->h }; // uiY + 80 放在 Power 下面
+                SDL_RenderCopy(cur_Renderer, tBomb, NULL, &rectBomb);
+                SDL_FreeSurface(sBomb);
+                SDL_DestroyTexture(tBomb);
             }
         }
         // 3. 绘制 Boss 血条 (顶部居中长条)
@@ -1021,6 +1127,8 @@ void Game::Clean() {
     Mix_FreeChunk(se_PowerUp);
     Mix_FreeChunk(se_Select);
     Mix_FreeChunk(se_BeHitted);
+    Mix_FreeChunk(se_REIMUBomb);
+    Mix_FreeChunk(se_MARISABomb);
     // 关闭音频设备
     Mix_CloseAudio();
     // 记得销毁所有Texture和指针
