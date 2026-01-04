@@ -1,4 +1,4 @@
-﻿#pragma execution_character_set("utf-8")  //解决中文不显示问题
+#pragma execution_character_set("utf-8")  //解决中文不显示问题
 #include "Game.h"
 #include <iostream>
 #include <algorithm>
@@ -67,7 +67,7 @@ bool Game::Init()
 
     is_Running = true;
     lastTime = SDL_GetTicks();
-    CurrentState = State::SELECT_CHARACTER;
+    CurrentState = State::MAIN_MENU;
     menuCursor = 0;
 
     return true;
@@ -205,29 +205,57 @@ void Game::HandleEvents()
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_QUIT) is_Running = false;
+
     }
 }
 
 void Game::Update(float DeltaTime)
 {
     const Uint8* key = SDL_GetKeyboardState(NULL);
+    static bool keyLock = false;
 
     switch (CurrentState)
     {
+    case State::MAIN_MENU:
+    {
+        if (!keyLock) {
+            if (key[SDL_SCANCODE_UP]) {
+                if (menuSelect > 0) menuSelect--;
+                keyLock = true;
+            }
+            if (key[SDL_SCANCODE_DOWN]) {
+				if (menuSelect < 1) menuSelect++; // 目前只有两个按钮：开始和退出  后续可以根据主菜单功能加更多
+                keyLock = true;
+            }
+            if (key[SDL_SCANCODE_Z]) {
+                if (menuSelect == 0) CurrentState = State::SELECT_CHARACTER;
+                else if (menuSelect == 1) is_Running = false;
+                keyLock = true;
+            }
+            
+        }
+
+        // 当所有按键都松开时，解锁
+        if (!key[SDL_SCANCODE_UP] && !key[SDL_SCANCODE_DOWN] && !key[SDL_SCANCODE_Z]) {
+            keyLock = false;
+        }
+        break;
+    }
+
     case State::SELECT_CHARACTER:
     {
-        static bool keyProcessed = false;
-        if (!keyProcessed) {
+
+        if (!keyLock) {
             if (key[SDL_SCANCODE_LEFT]) menuCursor = 0;
             if (key[SDL_SCANCODE_RIGHT]) menuCursor = 1;
             if (key[SDL_SCANCODE_Z]) {
                 selectedCharID = (menuCursor == 0) ? CharacterID::REIMU : CharacterID::MARISA;
                 InitBattle(selectedCharID);
             }
-            if (key[SDL_SCANCODE_LEFT] || key[SDL_SCANCODE_RIGHT] || key[SDL_SCANCODE_Z]) keyProcessed = true;
+            if (key[SDL_SCANCODE_LEFT] || key[SDL_SCANCODE_RIGHT] || key[SDL_SCANCODE_Z]) keyLock = true;
         }
         else {
-            if (!key[SDL_SCANCODE_LEFT] && !key[SDL_SCANCODE_RIGHT] && !key[SDL_SCANCODE_Z]) keyProcessed = false;
+            if (!key[SDL_SCANCODE_LEFT] && !key[SDL_SCANCODE_RIGHT] && !key[SDL_SCANCODE_Z]) keyLock = false;
         }
         break;
     }
@@ -364,7 +392,7 @@ void Game::Update(float DeltaTime)
 
     case State::GAME_OVER:
     case State::VICTORY:
-        if (key[SDL_SCANCODE_ESCAPE]) CurrentState = State::SELECT_CHARACTER;
+        if (key[SDL_SCANCODE_ESCAPE]) CurrentState = State::MAIN_MENU;
         break;
     }
 }
@@ -374,39 +402,105 @@ void Game::Render()
     // 这样你的“人工去背”图片放上去就看不出黑框了，机智！
     SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 0, 255);
     SDL_RenderClear(cur_Renderer);
+    if (CurrentState == State::MAIN_MENU) {
+        if (font) {
+            // --- [1. 绘制游戏大标题] ---
+            SDL_Color white = { 255, 255, 255, 255 };
+            SDL_Surface* titleSurf = TTF_RenderUTF8_Blended(font, "东方项目：代码之变", white);
+            if (titleSurf) {
+                SDL_Texture* titleTex = SDL_CreateTextureFromSurface(cur_Renderer, titleSurf);
+                // 将标题放大并居中（1920x1080屏幕）
+                SDL_Rect titleRect = { (1920 - titleSurf->w * 2) / 2, 250, titleSurf->w * 2, titleSurf->h * 2 };
+                SDL_RenderCopy(cur_Renderer, titleTex, NULL, &titleRect);
+                SDL_FreeSurface(titleSurf); SDL_DestroyTexture(titleTex);
+            }
 
+            // --- [2. 绘制选项：开始游戏] ---
+            // 根据 menuSelect 是否为 0 来决定颜色：选中为黄色，未选中为灰色
+            SDL_Color colorStart = (menuSelect == 0) ? SDL_Color{ 255, 255, 0, 255 } : SDL_Color{ 150, 150, 150, 255 };
+            SDL_Surface* s1 = TTF_RenderUTF8_Blended(font, "开始防火墙检测 (START)", colorStart);
+            if (s1) {
+                SDL_Texture* t1 = SDL_CreateTextureFromSurface(cur_Renderer, s1);
+                SDL_Rect r1 = { (1920 - s1->w) / 2, 600, s1->w, s1->h };
+                SDL_RenderCopy(cur_Renderer, t1, NULL, &r1);
+
+                // 如果选中，在左侧画一个小箭头或指示符
+                if (menuSelect == 0) {
+                    SDL_Rect pointer = { r1.x - 50, r1.y + 5, 30, 30 };
+                    SDL_RenderFillRect(cur_Renderer, &pointer); // 也可以贴一张灵梦的头像图
+                }
+                SDL_FreeSurface(s1); SDL_DestroyTexture(t1);
+            }
+
+            // --- [3. 绘制选项：退出游戏] ---
+            SDL_Color colorQuit = (menuSelect == 1) ? SDL_Color{ 255, 255, 0, 255 } : SDL_Color{ 150, 150, 150, 255 };
+            SDL_Surface* s2 = TTF_RenderUTF8_Blended(font, "断开连接 (QUIT)", colorQuit);
+            if (s2) {
+                SDL_Texture* t2 = SDL_CreateTextureFromSurface(cur_Renderer, s2);
+                SDL_Rect r2 = { (1920 - s2->w) / 2, 720, s2->w, s2->h };
+                SDL_RenderCopy(cur_Renderer, t2, NULL, &r2);
+
+                if (menuSelect == 1) {
+                    SDL_Rect pointer = { r2.x - 50, r2.y + 5, 30, 30 };
+                    SDL_RenderFillRect(cur_Renderer, &pointer);
+                }
+                SDL_FreeSurface(s2); SDL_DestroyTexture(t2);
+            }
+
+            // --- [4. 绘制页脚提示] ---
+            SDL_Surface* hint = TTF_RenderUTF8_Blended(font, "使用方向键切换，Z 键确认", { 100, 100, 100, 255 });
+            if (hint) {
+                SDL_Texture* hTex = SDL_CreateTextureFromSurface(cur_Renderer, hint);
+                SDL_Rect hRect = { (1920 - hint->w) / 2, 950, hint->w, hint->h };
+                SDL_RenderCopy(cur_Renderer, hTex, NULL, &hRect);
+                SDL_FreeSurface(hint); SDL_DestroyTexture(hTex);
+            }
+        }
+    }
     // ============================================================
-    // 状态 A: 角色选择界面
-    // ============================================================
+// 状态 A: 角色选择界面 (仅调整位置至全屏居中)
+// ============================================================
     if (CurrentState == State::SELECT_CHARACTER) {
-        SDL_Rect rRect = { 100, 200, 100, 100 };
-        SDL_Rect mRect = { 440, 200, 100, 100 };
+        // 设定 UI 参数
+        int iconSize = 200;  // 角色图标大小
+        int spacing = 400;   // 两个角色中心点之间的间距
+        int centerX = 1920 / 2;
+        int centerY = 1080 / 2;
 
+        // 计算居中位置：左侧角色和右侧角色的矩形区域
+        SDL_Rect rRect = { centerX - (spacing / 2) - (iconSize / 2), centerY - (iconSize / 2), iconSize, iconSize };
+        SDL_Rect mRect = { centerX + (spacing / 2) - (iconSize / 2), centerY - (iconSize / 2), iconSize, iconSize };
+
+        // 绘制灵梦 (Reimu)
         if (tex_PlayerReimu) {
             SDL_SetTextureColorMod(tex_PlayerReimu, (menuCursor == 0) ? 255 : 100, (menuCursor == 0) ? 255 : 100, (menuCursor == 0) ? 255 : 100);
             SDL_RenderCopy(cur_Renderer, tex_PlayerReimu, NULL, &rRect);
         }
+        // 绘制魔理沙 (Marisa)
         if (tex_PlayerMarisa) {
             SDL_SetTextureColorMod(tex_PlayerMarisa, (menuCursor == 1) ? 255 : 100, (menuCursor == 1) ? 255 : 100, (menuCursor == 1) ? 255 : 100);
             SDL_RenderCopy(cur_Renderer, tex_PlayerMarisa, NULL, &mRect);
         }
 
+        // 绘制高亮边框
         SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 255, 255);
         SDL_Rect border = (menuCursor == 0) ? rRect : mRect;
         border.x -= 5; border.y -= 5; border.w += 10; border.h += 10;
         SDL_RenderDrawRect(cur_Renderer, &border);
 
+        // 绘制文字提示 (水平居中)
         if (font) {
             SDL_Surface* surf = TTF_RenderUTF8_Blended(font, "选择角色(←/→ + Z)", { 255, 255, 255, 255 });
             if (surf) {
                 SDL_Texture* t = SDL_CreateTextureFromSurface(cur_Renderer, surf);
-                SDL_Rect dst = { 100, 50, surf->w, surf->h };
+                // 文字放在图标上方 100 像素处并居中
+                SDL_Rect dst = { centerX - (surf->w / 2), centerY - (iconSize / 2) - 80, surf->w, surf->h };
                 SDL_RenderCopy(cur_Renderer, t, NULL, &dst);
-                SDL_FreeSurface(surf); SDL_DestroyTexture(t);
+                SDL_FreeSurface(surf);
+                SDL_DestroyTexture(t);
             }
         }
     }
-
     // ============================================================
     // 状态 B: 游戏进行中 OR 对话中 (包含时停逻辑)
     // ============================================================
@@ -421,19 +515,90 @@ void Game::Render()
         // 道具
         for (auto p : powerUps) if (p->active) p->Render(cur_Renderer);
 
-        // 2. 绘制 UI (血条)
+        // 2. 绘制 UI (血条与数值)
         if (font && player) {
+            // --- [参数定义] ---
+            int uiX = 108;           // UI 起始 X 坐标
+            int uiY = 100;           // UI 起始 Y 坐标
+            int barW = 300;         // 血条总宽度
+            int barH = 20;          // 血条高度
+            float hpPercent = player->hp / player->max_hp; // 计算血量比例
+            if (hpPercent < 0) hpPercent = 0;
+
+            // --- [1. 绘制血条底槽 (深灰色背景)] ---
+            SDL_Rect bgRect = { uiX, uiY, barW, barH };
+            SDL_SetRenderDrawColor(cur_Renderer, 50, 50, 50, 255);
+            SDL_RenderFillRect(cur_Renderer, &bgRect);
+
+            // --- [2. 绘制实际血条 (红色动态条)] ---
+            SDL_Rect hpRect = { uiX, uiY, (int)(barW * hpPercent), barH };
+            SDL_SetRenderDrawColor(cur_Renderer, 255, 0, 0, 255); // 红色代表血量
+            SDL_RenderFillRect(cur_Renderer, &hpRect);
+
+            // --- [3. 绘制边框 (白色外框)] ---
+            SDL_SetRenderDrawColor(cur_Renderer, 200, 200, 200, 255);
+            SDL_RenderDrawRect(cur_Renderer, &bgRect);
+
+            // --- [4. 绘制文字数值 (HP 与 Power)] ---
             char buf[64];
             sprintf_s(buf, "HP: %.0f / %.0f  Power: %d", player->hp, player->max_hp, player->powerLevel);
+
             SDL_Surface* s = TTF_RenderUTF8_Blended(font, buf, { 255, 255, 255, 255 });
             if (s) {
                 SDL_Texture* t = SDL_CreateTextureFromSurface(cur_Renderer, s);
-                SDL_Rect dst = { 20, 20, s->w, s->h };
-                SDL_RenderCopy(cur_Renderer, t, NULL, &dst);
-                SDL_FreeSurface(s); SDL_DestroyTexture(t);
+                // 将文字放在血条的正下方 (偏移 25 像素)
+                SDL_Rect textDst = { uiX, uiY + barH + 5, s->w, s->h };
+                SDL_RenderCopy(cur_Renderer, t, NULL, &textDst);
+
+                SDL_FreeSurface(s);
+                SDL_DestroyTexture(t);
             }
         }
+        // 3. 绘制 Boss 血条 (顶部居中长条)
+        if (!Enemies.empty() && Enemies[0]->active) {
+            Enemy* boss = Enemies[0];
 
+            // --- [参数定义] ---
+            int screenW = 1900;
+            int barW = 600;         // Boss 血条宽度（比玩家的长，显大气）
+            int barH = 15;           // Boss 血条高度
+            int uiX = (screenW - barW) / 2; // 水平居中
+            int uiY = 10;            // 距离顶部 10 像素
+
+            // 假设 Boss 的最大血量可以通过逻辑推断或在 Enemy 类中定义
+            // 这里根据你的 SetupEnemyPhases 逻辑，假设初始血量较高（例如 6000）
+            // 如果 Enemy 类有 GetMaxBlood() 最好，如果没有，这里先设为一个基准值
+            float currentHp = boss->GetBlood();
+            static float maxHp = 6000.0f; // 建议在 Enemy 类初始化时记录这个值
+
+            float hpPercent = currentHp / maxHp;
+            if (hpPercent < 0) hpPercent = 0;
+            if (hpPercent > 1) hpPercent = 1;
+
+            // --- [1. 绘制底槽 (半透明黑色)] ---
+            SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_BLEND);
+            SDL_Rect bgRect = { uiX, uiY, barW, barH };
+            SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 0, 150);
+            SDL_RenderFillRect(cur_Renderer, &bgRect);
+
+            // --- [2. 绘制血条 (亮紫色/红色)] ---
+            SDL_Rect hpRect = { uiX, uiY, (int)(barW * hpPercent), barH };
+            // 东方风格 Boss 常规用紫色或深红色
+            SDL_SetRenderDrawColor(cur_Renderer, 200, 0, 200, 255);
+            SDL_RenderFillRect(cur_Renderer, &hpRect);
+
+            // --- [3. 绘制外框 (白色)] ---
+            SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 255, 255);
+            SDL_RenderDrawRect(cur_Renderer, &bgRect);
+
+            // --- [4. 绘制 Boss 阶段标记 (可选)] ---
+            // 在血条上标记出 4000 和 2000 的位置，对应你的阶段切换
+            SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 255, 200);
+            int p1X = uiX + (int)(barW * (4000.0f / maxHp));
+            int p2X = uiX + (int)(barW * (2000.0f / maxHp));
+            SDL_RenderDrawLine(cur_Renderer, p1X, uiY, p1X, uiY + barH);
+            SDL_RenderDrawLine(cur_Renderer, p2X, uiY, p2X, uiY + barH);
+        }
         // 3. ★★★ 时停遮罩与对话框逻辑 (别再漏掉了！) ★★★
         if (CurrentState == State::DIALOGUE && cur_index < DialoueQueue.size()) {
 
