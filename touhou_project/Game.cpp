@@ -1,4 +1,4 @@
-﻿#pragma execution_character_set("utf-8")  //解决中文不显示问题
+#pragma execution_character_set("utf-8")  //解决中文不显示问题
 #include "Game.h"
 #include <iostream>
 #include <algorithm>
@@ -649,37 +649,49 @@ void Game::Render()
     }
 
     // ============================================================
-    // 状态 A: 角色选择界面
-    // ============================================================
+// 状态 A: 角色选择界面 (仅调整位置至全屏居中)
+// ============================================================
     if (CurrentState == State::SELECT_CHARACTER) {
-        SDL_Rect rRect = { 100, 200, 100, 100 };
-        SDL_Rect mRect = { 440, 200, 100, 100 };
+        // 设定 UI 参数
+        int iconSize = 200;  // 角色图标大小
+        int spacing = 400;   // 两个角色中心点之间的间距
+        int centerX = 1920 / 2;
+        int centerY = 1080 / 2;
 
+        // 计算居中位置：左侧角色和右侧角色的矩形区域
+        SDL_Rect rRect = { centerX - (spacing / 2) - (iconSize / 2), centerY - (iconSize / 2), iconSize, iconSize };
+        SDL_Rect mRect = { centerX + (spacing / 2) - (iconSize / 2), centerY - (iconSize / 2), iconSize, iconSize };
+
+        // 绘制灵梦 (Reimu)
         if (tex_PlayerReimu) {
             SDL_SetTextureColorMod(tex_PlayerReimu, (menuCursor == 0) ? 255 : 100, (menuCursor == 0) ? 255 : 100, (menuCursor == 0) ? 255 : 100);
             SDL_RenderCopy(cur_Renderer, tex_PlayerReimu, NULL, &rRect);
         }
+        // 绘制魔理沙 (Marisa)
         if (tex_PlayerMarisa) {
             SDL_SetTextureColorMod(tex_PlayerMarisa, (menuCursor == 1) ? 255 : 100, (menuCursor == 1) ? 255 : 100, (menuCursor == 1) ? 255 : 100);
             SDL_RenderCopy(cur_Renderer, tex_PlayerMarisa, NULL, &mRect);
         }
 
+        // 绘制高亮边框
         SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 255, 255);
         SDL_Rect border = (menuCursor == 0) ? rRect : mRect;
         border.x -= 5; border.y -= 5; border.w += 10; border.h += 10;
         SDL_RenderDrawRect(cur_Renderer, &border);
 
+        // 绘制文字提示 (水平居中)
         if (font) {
             SDL_Surface* surf = TTF_RenderUTF8_Blended(font, "选择角色(←/→ + Z)", { 255, 255, 255, 255 });
             if (surf) {
                 SDL_Texture* t = SDL_CreateTextureFromSurface(cur_Renderer, surf);
-                SDL_Rect dst = { 100, 50, surf->w, surf->h };
+                // 文字放在图标上方 100 像素处并居中
+                SDL_Rect dst = { centerX - (surf->w / 2), centerY - (iconSize / 2) - 80, surf->w, surf->h };
                 SDL_RenderCopy(cur_Renderer, t, NULL, &dst);
-                SDL_FreeSurface(surf); SDL_DestroyTexture(t);
+                SDL_FreeSurface(surf);
+                SDL_DestroyTexture(t);
             }
         }
     }
-
     // ============================================================
     // 状态 B: 游戏进行中 OR 对话中 (包含时停逻辑)
     // ============================================================
@@ -694,19 +706,90 @@ void Game::Render()
         // 道具
         for (auto p : powerUps) if (p->active) p->Render(cur_Renderer);
 
-        // 2. 绘制 UI (血条)
+        // 2. 绘制 UI (血条与数值)
         if (font && player) {
+            // --- [参数定义] ---
+            int uiX = 108;           // UI 起始 X 坐标
+            int uiY = 60;           // UI 起始 Y 坐标
+            int barW = 300;         // 血条总宽度
+            int barH = 20;          // 血条高度
+            float hpPercent = player->hp / player->max_hp; // 计算血量比例
+            if (hpPercent < 0) hpPercent = 0;
+
+            // --- [1. 绘制血条底槽 (深灰色背景)] ---
+            SDL_Rect bgRect = { uiX, uiY, barW, barH };
+            SDL_SetRenderDrawColor(cur_Renderer, 50, 50, 50, 255);
+            SDL_RenderFillRect(cur_Renderer, &bgRect);
+
+            // --- [2. 绘制实际血条 (红色动态条)] ---
+            SDL_Rect hpRect = { uiX, uiY, (int)(barW * hpPercent), barH };
+            SDL_SetRenderDrawColor(cur_Renderer, 255, 0, 0, 255); // 红色代表血量
+            SDL_RenderFillRect(cur_Renderer, &hpRect);
+
+            // --- [3. 绘制边框 (白色外框)] ---
+            SDL_SetRenderDrawColor(cur_Renderer, 200, 200, 200, 255);
+            SDL_RenderDrawRect(cur_Renderer, &bgRect);
+
+            // --- [4. 绘制文字数值 (HP 与 Power)] ---
             char buf[64];
             sprintf_s(buf, "HP: %.0f / %.0f  Power: %d", player->hp, player->max_hp, player->powerLevel);
+
             SDL_Surface* s = TTF_RenderUTF8_Blended(font, buf, { 255, 255, 255, 255 });
             if (s) {
                 SDL_Texture* t = SDL_CreateTextureFromSurface(cur_Renderer, s);
-                SDL_Rect dst = { 20, 20, s->w, s->h };
-                SDL_RenderCopy(cur_Renderer, t, NULL, &dst);
-                SDL_FreeSurface(s); SDL_DestroyTexture(t);
+                // 将文字放在血条的正下方 (偏移 25 像素)
+                SDL_Rect textDst = { uiX, uiY + barH + 5, s->w, s->h };
+                SDL_RenderCopy(cur_Renderer, t, NULL, &textDst);
+
+                SDL_FreeSurface(s);
+                SDL_DestroyTexture(t);
             }
         }
+        // 3. 绘制 Boss 血条 (顶部居中长条)
+        if (!Enemies.empty() && Enemies[0]->active) {
+            Enemy* boss = Enemies[0];
 
+            // --- [参数定义] ---
+            int screenW = 1900;
+            int barW = 600;         // Boss 血条宽度（比玩家的长，显大气）
+            int barH = 15;           // Boss 血条高度
+            int uiX = (screenW - barW) / 2; // 水平居中
+            int uiY = 10;            // 距离顶部 10 像素
+
+            // 假设 Boss 的最大血量可以通过逻辑推断或在 Enemy 类中定义
+            // 这里根据你的 SetupEnemyPhases 逻辑，假设初始血量较高（例如 6000）
+            // 如果 Enemy 类有 GetMaxBlood() 最好，如果没有，这里先设为一个基准值
+            float currentHp = boss->GetBlood();
+            static float maxHp = 6000.0f; // 建议在 Enemy 类初始化时记录这个值
+
+            float hpPercent = currentHp / maxHp;
+            if (hpPercent < 0) hpPercent = 0;
+            if (hpPercent > 1) hpPercent = 1;
+
+            // --- [1. 绘制底槽 (半透明黑色)] ---
+            SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_BLEND);
+            SDL_Rect bgRect = { uiX, uiY, barW, barH };
+            SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 0, 150);
+            SDL_RenderFillRect(cur_Renderer, &bgRect);
+
+            // --- [2. 绘制血条 (亮紫色/红色)] ---
+            SDL_Rect hpRect = { uiX, uiY, (int)(barW * hpPercent), barH };
+            // 东方风格 Boss 常规用紫色或深红色
+            SDL_SetRenderDrawColor(cur_Renderer, 200, 0, 200, 255);
+            SDL_RenderFillRect(cur_Renderer, &hpRect);
+
+            // --- [3. 绘制外框 (白色)] ---
+            SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 255, 255);
+            SDL_RenderDrawRect(cur_Renderer, &bgRect);
+
+            // --- [4. 绘制 Boss 阶段标记 (可选)] ---
+            // 在血条上标记出 4000 和 2000 的位置，对应你的阶段切换
+            SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 255, 200);
+            int p1X = uiX + (int)(barW * (4000.0f / maxHp));
+            int p2X = uiX + (int)(barW * (2000.0f / maxHp));
+            SDL_RenderDrawLine(cur_Renderer, p1X, uiY, p1X, uiY + barH);
+            SDL_RenderDrawLine(cur_Renderer, p2X, uiY, p2X, uiY + barH);
+        }
         // 3. ★★★ 时停遮罩与对话框逻辑 (别再漏掉了！) ★★★
         if (CurrentState == State::DIALOGUE && cur_index < DialoueQueue.size()) {
 
