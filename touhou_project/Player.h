@@ -163,7 +163,6 @@ public:
     bool Dead_judge() { return lives < 0; }
 
     int CollectPowerUp() {
-
         if (powerLevel >= 4) return 0; // 假设最高 4.00
 
         powerValue += 0.05f; // 每个 P 点增加 0.05

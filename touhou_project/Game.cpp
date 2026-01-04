@@ -620,7 +620,6 @@ void Game::Update(float DeltaTime)
        
             if (p->active && player && player->CheckCollision(p)) {
                 if (player->CollectPowerUp()==1) {
-
                     if (se_PowerUp) Mix_PlayChannel(-1, se_PowerUp, 0);
                 }
                 p->active = false;
