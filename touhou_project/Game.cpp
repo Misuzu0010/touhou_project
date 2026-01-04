@@ -48,7 +48,7 @@ bool Game::Init()
         std::cout << "SDL_mixer Error: " << Mix_GetError() << std::endl;
         return false;
     }
-    Mix_AllocateChannels(32);
+    Mix_AllocateChannels(64);
  
 
     cur_Window = SDL_CreateWindow("Touhou STG - CyberSecurity",
@@ -86,11 +86,13 @@ bool Game::Init()
     se_Shoot = Mix_LoadWAV("assets\\sfx\\player_shoot.wav");
 	se_EnemyShoot1 = Mix_LoadWAV("assets\\sfx\\enemy_shoot1.wav");
     se_EnemyShoot2 = Mix_LoadWAV("assets\\sfx\\enemy_shoot2.wav");
-    //se_Hit = Mix_LoadWAV("assets\\sfx\\命中.wav");
     se_Dead = Mix_LoadWAV("assets\\sfx\\playerdead.wav");
     se_Victory = Mix_LoadWAV("assets\\sfx\\victory.mov");
 	se_PowerUp = Mix_LoadWAV("assets\\sfx\\power_up.wav");
     se_Select= Mix_LoadWAV("assets\\sfx\\select.wav");
+    se_BeHitted = Mix_LoadWAV("assets\\sfx\\playerbehitted.wav");
+    se_REIMUBomb = Mix_LoadWAV("assets\\sfx\\reimubomb.wav");
+	se_MARISABomb = Mix_LoadWAV("assets\\sfx\\marisabomb.wav");
     if (!se_Shoot || !se_EnemyShoot1 || !se_EnemyShoot2 || !se_Dead || !se_Victory || !se_PowerUp) {
         std::cout << "SFX Load Failed!" << std::endl;
 	}
@@ -439,6 +441,46 @@ void Game::Update(float DeltaTime)
             //    现在每隔 4.0 到 6.0 秒掉落一批
             powerUpSpawnTimer = 4.0f + (rand() % 20) / 10.0f;
         }
+        // --- [新增：BOOM 触发器] ---
+        static bool xPressed = false;
+        if (key[SDL_SCANCODE_X] && !xPressed && player->bombs > 0 && !isSpellActive) {
+            player->bombs--;
+            isSpellActive = true;
+            spellTimer = 3.0f; // 符卡持续3秒
+            spellUser = selectedCharID;
+
+            player->isInvincible = true;
+            player->invincTimer = 3.5f; // 无敌略长于符卡
+
+            if (se_REIMUBomb && spellUser == CharacterID::REIMU) Mix_PlayChannel(-1, se_REIMUBomb, 0);
+            if(se_REIMUBomb && spellUser == CharacterID::MARISA) Mix_PlayChannel(-1, se_MARISABomb, 0);
+            xPressed = true;
+        }
+        if (!key[SDL_SCANCODE_X]) xPressed = false;
+        if (!key[SDL_SCANCODE_X]) xPressed = false;
+
+        if (isSpellActive) {
+            spellTimer -= DeltaTime;
+
+            // 持续消弹：符卡期间任何接触到特效区域的子弹都会消失
+            for (auto b : enemyBullets) {
+                if (spellUser == CharacterID::MARISA) {
+                    // 魔理沙：激光范围内的子弹消失
+                    if (abs(b->Position.x - player->Position.x) < 100) b->active = false;
+                }
+                else {
+                    // 灵梦：全屏缓慢消弹
+                    b->active = false;
+                }
+            }
+
+            // 持续伤害
+            for (auto e : Enemies) {
+                if (e->active) e->hit(10); // 每帧造成小额伤害，累计很高
+            }
+
+            if (spellTimer <= 0) isSpellActive = false;
+        }
 
         // Boss逻辑
         // Game.cpp -> Update 函数内部 -> Boss逻辑部分
@@ -521,21 +563,39 @@ void Game::Update(float DeltaTime)
             }
         }
 
-        // 碰撞：子弹打玩家
+        // 碰撞：子弹打玩家 (已适配东方残机与无敌机制)
         for (auto b : enemyBullets) {
-            if (b->active && player && player->CheckCollision(b)) {
-                player->hit(10);
-                b->active = false;
+            // 只有在子弹激活、玩家存在，且玩家当前【不在】无敌状态时才检测碰撞
+            if (b->active && player && !player->isInvincible && player->CheckCollision(b)) {
+
+                b->active = false;      // 销毁击中玩家的子弹
+                player->lives--;        // 减少一个残机 (原作机制：Miss)
+  
+
                 if (player->Dead_judge()) {
-                    if (se_Dead) Mix_PlayChannel(-1, se_Dead, 0); // 玩家死亡音效
-                    Mix_HaltMusic(); // 停止BGM
+                    // 残机小于 0，彻底游戏结束
+                    Mix_HaltMusic();    // 停止背景音乐
+                    if (se_Dead) Mix_PlayChannel(-1, se_Dead, 0);
                     CurrentState = State::GAME_OVER;
+                }
+                else {
+                    if (se_BeHitted) Mix_PlayChannel(-1, se_BeHitted, 0);
+                    /// ★★★ 核心修改：被击中后全屏消弹 ★★★
+                    // 东方原作中，Miss 后屏幕上的子弹会全部消失
+                    for (auto eb : enemyBullets) {
+                        eb->active = false;
+                    }
+                    player->ResetPosition();
+
+                    // 可选：清除当前屏幕上的所有敌方子弹 (原作中被击中通常会消弹)
+                    // for (auto eb : enemyBullets) eb->active = false;
                 }
             }
         }
 
         // 碰撞：吃P点
         for (auto p : powerUps) {
+
             // 原来的写法（太严苛了，注释掉）：
             // if (p->active && player && player->CheckCollision(p)) {
 
@@ -557,8 +617,10 @@ void Game::Update(float DeltaTime)
             // 这里我们简化一下，直接判断是否在 pickUp 范围内
             bool isColliding = (diffX < pickUpWidth / 2) && (diffY < pickUpHeight / 2);
 
-            if (p->active && player && isColliding) {
-                if (player->CollectPowerUp()) {
+       
+            if (p->active && player && player->CheckCollision(p)) {
+                if (player->CollectPowerUp()==1) {
+
                     if (se_PowerUp) Mix_PlayChannel(-1, se_PowerUp, 0);
                 }
                 p->active = false;
@@ -581,23 +643,67 @@ void Game::Update(float DeltaTime)
 
     case State::GAME_OVER:
     case State::VICTORY:
+    {
         static bool escPressed = false;
+        static bool rPressed = false;
 
-        if (key[SDL_SCANCODE_ESCAPE] && !escPressed) {
-            // 1. 切换游戏状态回到主菜单
-            CurrentState = State::MAIN_MENU;
-            menuSelect = 0; // 重置菜单光标到第一项
-
-            // 2. 音乐切换核心代码
-            if (bgm_Menu) {
-                Mix_HaltMusic();             // 停止当前所有正在播放的背景音乐
-                Mix_PlayMusic(bgm_Menu, -1); // 重新循环播放主菜单背景音乐 (-1代表无限循环)
+        if (key[SDL_SCANCODE_ESCAPE]) {
+            if (!escPressed) {
+                CurrentState = State::MAIN_MENU;
+                menuSelect = 0;
+                if (bgm_Menu) {
+                    Mix_HaltMusic();
+                    Mix_PlayMusic(bgm_Menu, -1);
+                }
+                escPressed = true;
             }
-            if (!key[SDL_SCANCODE_ESCAPE]) {
-                escPressed = false;
-            }
-            break;
         }
+        else {
+            escPressed = false; // 抬起按键时重置
+        }
+
+        if (CurrentState == State::GAME_OVER) {
+            // --- 1. 倒计时逻辑 ---
+            continueTimer -= DeltaTime;
+            if (continueTimer <= 0) {
+                // 时间到，强制回到主菜单
+                CurrentState = State::MAIN_MENU;
+                if (bgm_Menu) {
+                    Mix_HaltMusic();
+                    Mix_PlayMusic(bgm_Menu, -1);
+                }
+                continueTimer = 10.0f; // 重置计时器供下次使用
+                break;
+            }
+            // --- 2. 续关 (按 R) ---
+            if (key[SDL_SCANCODE_R]) {
+                if (!rPressed) {
+                    // --- 东方传统续关重置 ---
+                    player->lives = 3;           // 恢复残机
+                    player->powerLevel = 0;      // 续关惩罚：火力清零或降级
+                    player->powerValue = 0;
+                    //player->grazeCount = 0;      // 擦弹清零
+                    player->ResetPosition();     // 移动到初始点并开启3秒无敌/闪烁
+
+                    // 清理屏幕弹幕，给玩家喘息机会
+                    for (auto b : enemyBullets) b->active = false;
+
+                    // 恢复战斗音乐
+                    if (bgm_Battle) {
+                        Mix_HaltMusic();
+                        Mix_PlayMusic(bgm_Battle, -1);
+                    }
+
+                    CurrentState = State::PLAYING;
+                    rPressed = true;
+                }
+            }
+            else {
+                rPressed = false; // 抬起按键时重置
+            }
+        }
+        break;
+    }
     }
 }
 void Game::Render()
@@ -625,6 +731,7 @@ void Game::Render()
     }
     if (CurrentState == State::MAIN_MENU) {
         if (font) {
+          
             // --- [1. 绘制游戏大标题] ---
             SDL_Color white = { 255, 255, 255, 255 };
             SDL_Surface* titleSurf = TTF_RenderUTF8_Blended(font,"东方代码乡",white);
@@ -807,44 +914,112 @@ void Game::Render()
         for (auto b : enemyBullets) if (b->active) b->Render(cur_Renderer, tex_EnemyBullet);
         // 道具
         for (auto p : powerUps) if (p->active) p->Render(cur_Renderer);
+        //bomb
+        if (isSpellActive) {
+            // --- [1. 背景变暗] ---
+            SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 0, 150);
+            SDL_Rect full = { 0, 0, 1920, 1080 };
+            SDL_RenderFillRect(cur_Renderer, &full);
 
-        // 2. 绘制 UI (血条与数值)
+            // --- [2. 特效绘制] ---
+            if (spellUser == CharacterID::REIMU) {
+                // 灵梦：灵符「梦想封印」
+                // 绘制 8 个巨大的彩色光玉环绕
+                for (int i = 0; i < 8; i++) {
+                    float angle = (spellTimer * 4.0f) + (i * 0.785f);
+                    int dist = 300 - (spellTimer * 50); // 逐渐向中心收缩
+                    int tx = player->Position.x + cos(angle) * dist;
+                    int ty = player->Position.y + sin(angle) * dist;
+
+                    SDL_SetRenderDrawColor(cur_Renderer, 255, 100, 200, 180);
+                    SDL_Rect orb = { tx - 60, ty - 60, 120, 120 };
+                    SDL_RenderFillRect(cur_Renderer, &orb); // 建议换成带光晕的 png
+                }
+            }
+            else if (spellUser == CharacterID::MARISA) {
+                // 魔理沙：恋符「Master Spark」
+                SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_ADD); // 加法混合，超亮！
+                int offsetX = (shakeTime > 0) ? (rand() % 10 - 5) : 0;
+
+                // 激光外壳
+                SDL_SetRenderDrawColor(cur_Renderer, 100, 100, 255, 200);
+                SDL_Rect beamAura = { (int)player->Position.x - 120 + offsetX, 0, 240, (int)player->Position.y };
+                SDL_RenderFillRect(cur_Renderer, &beamAura);
+
+                // 激光核心
+                SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 255, 255);
+                SDL_Rect beamCore = { (int)player->Position.x - 70 + offsetX, 0, 140, (int)player->Position.y };
+                SDL_RenderFillRect(cur_Renderer, &beamCore);
+                SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_BLEND);
+            }
+
+            // --- [3. 符卡名称宣示] ---
+            std::string sName = (spellUser == CharacterID::REIMU) ? "灵符「梦想封印」" : "恋符「Master Spark」";
+            SDL_Surface* sSurf = TTF_RenderUTF8_Blended(font, sName.c_str(), { 255, 255, 255, 255 });
+            if (sSurf) {
+                SDL_Texture* sTex = SDL_CreateTextureFromSurface(cur_Renderer, sSurf);
+                // 名称从右侧滑入
+                SDL_Rect sRect = { 1800 - (int)((3.0f - spellTimer) * 400), 150, sSurf->w, sSurf->h };
+                SDL_RenderCopy(cur_Renderer, sTex, NULL, &sRect);
+                SDL_FreeSurface(sSurf); SDL_DestroyTexture(sTex);
+            }
+        }
+        // 2. 绘制 UI (残机与 Power 展示)
         if (font && player) {
             // --- [参数定义] ---
             int uiX = 108;           // UI 起始 X 坐标
             int uiY = 100;           // UI 起始 Y 坐标
-            int barW = 300;         // 血条总宽度
-            int barH = 20;          // 血条高度
-            float hpPercent = player->hp / player->max_hp; // 计算血量比例
-            if (hpPercent < 0) hpPercent = 0;
 
-            // --- [1. 绘制血条底槽 (深灰色背景)] ---
-            SDL_Rect bgRect = { uiX, uiY, barW, barH };
-            SDL_SetRenderDrawColor(cur_Renderer, 50, 50, 50, 255);
-            SDL_RenderFillRect(cur_Renderer, &bgRect);
+            // --- [1. 构建残机显示字符串] ---
+            // 东方风格：Player [ ★ ★ ★ ]
+            std::string lifeStr = "Player: ";
+            for (int i = 0; i < player->lives; i++) {
+                lifeStr += "★ ";
+            }
+            if (player->lives <= 0) lifeStr += "None"; // 0残机时的提示
 
-            // --- [2. 绘制实际血条 (红色动态条)] ---
-            SDL_Rect hpRect = { uiX, uiY, (int)(barW * hpPercent), barH };
-            SDL_SetRenderDrawColor(cur_Renderer, 255, 0, 0, 255); // 红色代表血量
-            SDL_RenderFillRect(cur_Renderer, &hpRect);
+            // --- [2. 渲染残机文字] ---
+            SDL_Color pink = { 255, 105, 180, 255 }; // 东方 UI 常用粉红色或纯白色
+            SDL_Surface* sLife = TTF_RenderUTF8_Blended(font, lifeStr.c_str(), pink);
+            if (sLife) {
+                SDL_Texture* tLife = SDL_CreateTextureFromSurface(cur_Renderer, sLife);
+                SDL_Rect rectLife = { uiX, uiY, sLife->w, sLife->h };
+                SDL_RenderCopy(cur_Renderer, tLife, NULL, &rectLife);
 
-            // --- [3. 绘制边框 (白色外框)] ---
-            SDL_SetRenderDrawColor(cur_Renderer, 200, 200, 200, 255);
-            SDL_RenderDrawRect(cur_Renderer, &bgRect);
+                // 渲染完立即释放，防止内存泄漏
+                SDL_FreeSurface(sLife);
+                SDL_DestroyTexture(tLife);
+            }
 
-            // --- [4. 绘制文字数值 (HP 与 Power)] ---
-            char buf[64];
-            sprintf_s(buf, "HP: %.0f / %.0f  Power: %d", player->hp, player->max_hp, player->powerLevel);
+            // --- [3. 渲染 Power 数值] ---
+            // 东方风格：Power [ 1.00 / 3.00 ]
+            char powerBuf[64];
+            float totalPower = (float)player->powerLevel + player->powerValue;
+            sprintf_s(powerBuf, "Power:  %.2f / 3.00", totalPower);
 
-            SDL_Surface* s = TTF_RenderUTF8_Blended(font, buf, { 255, 255, 255, 255 });
-            if (s) {
-                SDL_Texture* t = SDL_CreateTextureFromSurface(cur_Renderer, s);
-                // 将文字放在血条的正下方 (偏移 25 像素)
-                SDL_Rect textDst = { uiX, uiY + barH + 5, s->w, s->h };
-                SDL_RenderCopy(cur_Renderer, t, NULL, &textDst);
+            SDL_Surface* sPower = TTF_RenderUTF8_Blended(font, powerBuf, { 255, 255, 255, 255 });
+            if (sPower) {
+                SDL_Texture* tPower = SDL_CreateTextureFromSurface(cur_Renderer, sPower);
+                // 将 Power 文字放在 Player 文字下方 (偏移 40 像素)
+                SDL_Rect rectPower = { uiX, uiY + 40, sPower->w, sPower->h };
+                SDL_RenderCopy(cur_Renderer, tPower, NULL, &rectPower);
 
-                SDL_FreeSurface(s);
-                SDL_DestroyTexture(t);
+                SDL_FreeSurface(sPower);
+                SDL_DestroyTexture(tPower);
+            }
+            // --- [4. 渲染 Spell Card 数值] ---
+            std::string bombStr = "Spell:  ";
+            for (int i = 0; i < player->bombs; i++) {
+                bombStr += "★ "; // 或者用特定的图标
+            }
+            SDL_Surface* sBomb = TTF_RenderUTF8_Blended(font, bombStr.c_str(), { 100, 255, 100, 255 }); // 绿色
+            if (sBomb) {
+                SDL_Texture* tBomb = SDL_CreateTextureFromSurface(cur_Renderer, sBomb);
+                SDL_Rect rectBomb = { uiX, uiY + 80, sBomb->w, sBomb->h }; // uiY + 80 放在 Power 下面
+                SDL_RenderCopy(cur_Renderer, tBomb, NULL, &rectBomb);
+                SDL_FreeSurface(sBomb);
+                SDL_DestroyTexture(tBomb);
             }
         }
         // 3. 绘制 Boss 血条 (顶部居中长条)
@@ -949,15 +1124,55 @@ void Game::Render()
     // ============================================================
     else if (CurrentState == State::VICTORY || CurrentState == State::GAME_OVER) {
         if (font) {
-            const char* msg = (CurrentState == State::VICTORY) ? "VICTORY! (按下ESC返回)" : "满身疮痍 (按下ESC返回)";
+            // --- 1. 绘制半透明遮罩 (增强氛围感) ---
+            SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 0, 150); // 黑色半透明
+            SDL_Rect fullScreen = { 0, 0, 1920, 1080 };
+            SDL_RenderFillRect(cur_Renderer, &fullScreen);
+
+            // --- 2. 准备主提示文字 ---
+            const char* msg = (CurrentState == State::VICTORY) ? "VICTORY!" : "满身疮痍";
             SDL_Color color = (CurrentState == State::VICTORY) ? SDL_Color{ 255, 255, 0, 255 } : SDL_Color{ 255, 0, 0, 255 };
 
             SDL_Surface* surf = TTF_RenderUTF8_Blended(font, msg, color);
             if (surf) {
                 SDL_Texture* t = SDL_CreateTextureFromSurface(cur_Renderer, surf);
-                SDL_Rect dst = { (1920 - surf->w) / 2, (1080 - surf->h) / 2, surf->w, surf->h };
+                SDL_Rect dst = { (1920 - surf->w) / 2, (1080 - surf->h) / 2 - 50, surf->w, surf->h };
                 SDL_RenderCopy(cur_Renderer, t, NULL, &dst);
                 SDL_FreeSurface(surf); SDL_DestroyTexture(t);
+            }
+
+            // --- 3. [新增] 绘制倒计时数字 (仅在 GAME_OVER 时) ---
+            if (CurrentState == State::GAME_OVER) {
+                char countBuf[64];
+                // 使用 ceil 向上取整，让玩家看到从 10 开始倒数
+                sprintf_s(countBuf, "%d 秒后返回菜单", (int)ceil(continueTimer));
+
+                // 倒计时小于3秒变红，增加紧张感
+                SDL_Color tColor = (continueTimer > 3.0f) ? SDL_Color{ 255, 255, 255, 255 } : SDL_Color{ 255, 50, 50, 255 };
+
+                SDL_Surface* sCount = TTF_RenderUTF8_Blended(font, countBuf, tColor);
+                if (sCount) {
+                    SDL_Texture* tCount = SDL_CreateTextureFromSurface(cur_Renderer, sCount);
+                    SDL_Rect rCount = { (1920 - sCount->w) / 2, (1080 - sCount->h) / 2, sCount->w, sCount->h };
+                    SDL_RenderCopy(cur_Renderer, tCount, NULL, &rCount);
+                    SDL_FreeSurface(sCount); SDL_DestroyTexture(tCount);
+                }
+            }
+
+            // --- 4. 准备交互提示文字 (续关与退出) ---
+            // 只有在 GAME_OVER 时才显示“按R续关”
+            std::string hintStr = (CurrentState == State::GAME_OVER) ?
+                "按下 R 键不屈续关 / 按下 ESC 返回主菜单" :
+                "按下 ESC 返回主菜单";
+
+            SDL_Surface* hintSurf = TTF_RenderUTF8_Blended(font, hintStr.c_str(), { 255, 255, 255, 255 });
+            if (hintSurf) {
+                SDL_Texture* ht = SDL_CreateTextureFromSurface(cur_Renderer, hintSurf);
+                // 放在主标题下方 100 像素的位置
+                SDL_Rect hDst = { (1920 - hintSurf->w) / 2, (1080 - hintSurf->h) / 2 + 80, hintSurf->w, hintSurf->h };
+                SDL_RenderCopy(cur_Renderer, ht, NULL, &hDst);
+                SDL_FreeSurface(hintSurf); SDL_DestroyTexture(ht);
             }
         }
     }
@@ -973,11 +1188,13 @@ void Game::Clean() {
     Mix_FreeChunk(se_Shoot);
     Mix_FreeChunk(se_EnemyShoot1);
     Mix_FreeChunk(se_EnemyShoot2);
-    //Mix_FreeChunk(se_Hit);
     Mix_FreeChunk(se_Dead);
     Mix_FreeChunk(se_Victory);
     Mix_FreeChunk(se_PowerUp);
     Mix_FreeChunk(se_Select);
+    Mix_FreeChunk(se_BeHitted);
+    Mix_FreeChunk(se_REIMUBomb);
+    Mix_FreeChunk(se_MARISABomb);
     // 关闭音频设备
     Mix_CloseAudio();
     // 记得销毁所有Texture和指针
@@ -986,4 +1203,22 @@ void Game::Clean() {
     SDL_DestroyTexture(tex_BackgroundMenu);
     SDL_DestroyTexture(tex_BackgroundBattle);
     TTF_Quit(); IMG_Quit(); SDL_Quit();
+    // 清理失效对象 (非常重要！)
+    enemyBullets.erase(std::remove_if(enemyBullets.begin(), enemyBullets.end(),
+        [](Bullet* b) {
+            if (!b->active) { delete b; return true; }
+            return false;
+        }), enemyBullets.end());
+
+    playerBullets.erase(std::remove_if(playerBullets.begin(), playerBullets.end(),
+        [](Bullet* b) {
+            if (!b->active) { delete b; return true; }
+            return false;
+        }), playerBullets.end());
+
+    powerUps.erase(std::remove_if(powerUps.begin(), powerUps.end(),
+        [](PowerUp* p) {
+            if (!p->active) { delete p; return true; }
+            return false;
+        }), powerUps.end());
 }

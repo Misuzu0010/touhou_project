@@ -64,11 +64,13 @@ public:
 	Mix_Chunk* se_Shoot = nullptr;
     Mix_Chunk* se_EnemyShoot1 = nullptr;
     Mix_Chunk* se_EnemyShoot2 = nullptr;
-    //Mix_Chunk* se_Hit = nullptr;
     Mix_Chunk* se_Dead = nullptr;
     Mix_Chunk* se_Victory = nullptr;
     Mix_Chunk* se_PowerUp = nullptr;
     Mix_Chunk * se_Select = nullptr;
+    Mix_Chunk* se_BeHitted = nullptr;
+    Mix_Chunk* se_REIMUBomb = nullptr;
+	Mix_Chunk* se_MARISABomb = nullptr;
     int bgmVolume = 32; // 初始音量设为一半 (0-128)
     int sfxVolume = 32;  // 音效音量 (0-128)
     int volMenuSelect = 0; // 0: 调节BGM, 1: 调节音效, 2: 返回
@@ -94,7 +96,11 @@ public:
     float enemyShootTimer;
     float powerUpSpawnTimer;
     float powerUpSpawnInterval;
-
+    float continueTimer = 10.0f; // 续关倒计时，初始10秒
+    float spellTimer = 0.0f;       // 符卡持续时间
+    bool isSpellActive = false;    // 符卡是否激活
+    CharacterID spellUser;         // 谁放的符卡
+    float shakeTime = 0.0f; // 用于震屏效果
     Game();
     bool Init();
     void Run();

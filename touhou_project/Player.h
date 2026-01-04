@@ -7,28 +7,65 @@
 class Player : public Entity
 {
 public:
-    float hp;
-    float max_hp;
+    //float hp;
+    //float max_hp;
+    int lives;
     int powerLevel;
-    int powerCount;
+    int bombs;
+    float powerValue;
     float attack_point;
     SDL_Texture* texture;
+
+    float invincTimer;   // 无敌剩余时间
+    bool isInvincible;   // 是否处于无敌状态
+    bool visible=true;        // 闪烁控制：当前是否显示
+    float flashTimer;    // 闪烁频率计时器
 
     // 动画控制变量
     float visualTime;    // 视觉计时器
     double currentAngle; // 当前倾斜角度
 
     Player(float x, float y, SDL_Texture* tex)
-        : Entity(x, y, 3.0f), hp(100), max_hp(100), powerLevel(0), powerCount(0), attack_point(20), texture(tex),
-        visualTime(0.0f), currentAngle(0.0)
+        : Entity(x, y, 3.0f), lives(3), powerLevel(0),bombs(1), powerValue(0.0f), attack_point(20), texture(tex),
+        invincTimer(0.0f), isInvincible(false), flashTimer(0.0f)
     {
     }
 
     ~Player() {}
 
+    // 重置玩家到初始位置并给予无敌
+    void ResetPosition() {
+        Position.x = 1920 / 2; // 屏幕底部中央
+        Position.y = 900;
+        isInvincible = true;
+        invincTimer = 3.0f;    // 3秒无敌
+        flashTimer = 0.1f;
+        visible = true;
+    }
+
     void Update(float deltaTime) override
     {
         const Uint8* key = SDL_GetKeyboardState(NULL);
+
+        // --- 0. 无敌与闪烁逻辑处理 ---
+        if (invincTimer > 0) {
+            invincTimer -= deltaTime;
+            flashTimer -= deltaTime;
+
+            // 实现闪烁特效：每 0.1 秒切换一次可见性
+            if (flashTimer <= 0) {
+                visible = !visible;
+                flashTimer = 0.15f;
+            }
+
+            if (invincTimer <= 0) {
+                isInvincible = false;
+                visible = true; // 确保无敌结束后是显示的
+            }
+        }
+        else {
+            visible = true; // 确保非无敌状态不消失
+        }
 
         // --- 1. 基础移动 (保持不变) ---
         float baseSpeed = 800.0f;
@@ -66,7 +103,8 @@ public:
 
     void Render(SDL_Renderer* renderer) override
     {
-        if (texture) {
+        // ★★★ 只有当 visible 为 true 时才渲染人物 (实现闪烁) ★★★
+        if (texture && visible) {
             int texW, texH;
             SDL_QueryTexture(texture, NULL, NULL, &texW, &texH);
 
@@ -117,17 +155,24 @@ public:
         }
     }
 
-    void hit(float damage) { hp -= damage; }
-    bool Dead_judge() { return hp <= 0; }
-    float get_hp() { return hp; }
+    void hit(float damage) {
+        // 外部逻辑会检查 isInvincible，这里保留作为兜底
+        if (!isInvincible) lives--;
+    }
+
+    bool Dead_judge() { return lives < 0; }
+
     int CollectPowerUp() {
-        powerCount++;
-        hp += 5;
-        if (hp > max_hp) hp = max_hp;
-        if (powerCount % 4 == 0 && powerLevel < 3) {
+
+        if (powerLevel >= 4) return 0; // 假设最高 4.00
+
+        powerValue += 0.05f; // 每个 P 点增加 0.05
+
+        if (powerValue >= 1.0f) {
+            powerValue -= 1.0f; // 溢出转入下一级
             powerLevel++;
-			return 1; // 升级成功
+            return 1; // 升级了
         }
-		return 0; // 仅回血未升级
+        return 2; // 捡到了但未升级
     }
 };
