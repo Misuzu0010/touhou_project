@@ -25,7 +25,23 @@ Bullet::Bullet(float x, float y, float waitTime, float speed, Player* player, Bu
 void Bullet::Update(float deltaTime)
 {
     // ... (追踪逻辑不变) ...
-    if (state == BulletState::WAITING) {
+    if (state == BulletState::UNFOLDING) 
+    {
+        // 1. 倒计时
+        unfoldTimer -= deltaTime;
+
+        // 2. 如果展开时间结束
+        if (unfoldTimer <= 0) {
+            // 刹车！停在原地
+            Velocity.x = 0;
+            Velocity.y = 0;
+            // 进入原本的等待阶段
+            state = BulletState::WAITING;
+        }
+        // 注意：这里不用写移动代码，因为 Entity::Update(deltaTime) 会帮我们根据 Velocity 移动
+    }
+    else if (state == BulletState::WAITING) 
+    {
         waitTimer -= deltaTime;
         if (waitTimer <= 0) {
             if (targetPlayer) {
@@ -43,7 +59,8 @@ void Bullet::Update(float deltaTime)
 
     // ★边界判定：适配 1920x1080
     // 稍微放宽一点销毁边界，防止子弹刚出屏幕就消失显得突兀
-    if (Position.x > 2000 || Position.x < -100 || Position.y > 1150 || Position.y < -100) {
+    if (Position.x > 2000 || Position.x < -100 || Position.y > 1150 || Position.y < -100) 
+    {
         active = false;
     }
 }

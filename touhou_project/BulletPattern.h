@@ -35,17 +35,31 @@ public:
         }
     }
 
-    // 以前的 StopAndGo 也可以保留，稍微改造一下支持类型
-    void ShootStopAndGo(float now_x, float now_y, float waitTime, float speed, Player* player, int bullet_cnt, std::vector<Bullet*>& bullets, BulletType type = BulletType::LOCK)
+    void ShootStopAndGo(float now_x, float now_y, float waitTime, float attackSpeed, Player* player, int bullet_cnt, std::vector<Bullet*>& bullets, BulletType type = BulletType::LOCK)
     {
+        float targetRadius = 150.0f; // 展开后的圆圈半径
+        float unfoldTime = 0.5f;     // 展开过程持续多久 (0.5秒)
+
         for (int i = 0; i < bullet_cnt; i++)
         {
             float angle = (float)i / bullet_cnt * 2 * M_PI;
-            float dist = 60.0f;
-            float spawn_x = now_x + dist * std::cos(angle);
-            float spawn_y = now_y + dist * std::sin(angle);
 
-            bullets.push_back(new Bullet(spawn_x, spawn_y, waitTime, speed, player, type));
+            // 1. 生成在 Boss 中心 (堆叠状态)
+            // 这里的 waitTime 是展开后停顿的时间
+            Bullet* b = new Bullet(now_x, now_y, waitTime, attackSpeed, player, type);
+
+            // 2. 强制设为展开状态
+            b->state = BulletState::UNFOLDING;
+            b->unfoldTimer = unfoldTime;
+
+            // 3. 计算展开速度
+            // 速度 = 距离 / 时间
+            // 这样 0.5秒 后，它正好飞到 targetRadius 的位置
+            float unfoldSpeed = targetRadius / unfoldTime;
+            b->Velocity.x = unfoldSpeed * std::cos(angle);
+            b->Velocity.y = unfoldSpeed * std::sin(angle);
+
+            bullets.push_back(b);
         }
     }
 };

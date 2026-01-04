@@ -12,7 +12,7 @@ enum class BulletType {
     PLAYER_STAR     // Íæ¼Ò£ºÄ§ÀíÉ³ÐÇÐÇ
 };
 
-enum class BulletState { NORMAL, WAITING, AIMING };
+enum class BulletState { NORMAL, WAITING, AIMING, UNFOLDING };
 
 class Bullet : public Entity
 {
@@ -22,6 +22,7 @@ public:
 
     float waitTimer;
     float finalSpeed;
+    float unfoldTimer;
     Player* targetPlayer;
 
     Bullet(float x, float y, float speed_x, float speed_y, BulletType type = BulletType::VIRUS);

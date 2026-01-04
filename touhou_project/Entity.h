@@ -40,4 +40,5 @@ public:
         float distance = sqrt((distX * distX) + (distY * distY));
         return distance < (radius + Other->radius);
     }
+
 };

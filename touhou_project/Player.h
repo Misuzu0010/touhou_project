@@ -124,7 +124,7 @@ public:
         powerCount++;
         hp += 5;
         if (hp > max_hp) hp = max_hp;
-        if (powerCount % 10 == 0 && powerLevel < 3) {
+        if (powerCount % 4 == 0 && powerLevel < 3) {
             powerLevel++;
 			return 1; // Éý¼¶³É¹¦
         }

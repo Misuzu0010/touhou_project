@@ -9,7 +9,7 @@
 BulletPattern bp;
 
 Game::Game() : player(nullptr), tex_PlayerReimu(nullptr), tex_PlayerMarisa(nullptr),
-tex_EnemyBullet(nullptr), tex_PlayerBullet(nullptr), tex_PowerUp(nullptr),
+tex_EnemyBullet(nullptr), tex_PlayerBullet(nullptr), tex_PowerUp(nullptr),tex_BackgroundBattle(nullptr), tex_BackgroundMenu(nullptr),
 font(nullptr), currentPhaseIndex(0), powerUpSpawnTimer(0), powerUpSpawnInterval(3.0f),
 cur_Window(nullptr), cur_Renderer(nullptr), is_Running(false) {
 }
@@ -69,6 +69,9 @@ bool Game::Init()
     tex_PlayerBullet = LoadTextureWithColorKey("PlayerBullet.png");
     tex_EnemyBullet = LoadTextureWithColorKey("EnemyBullet.png");
     tex_PowerUp = tex_PlayerBullet; // 复用
+	// 背景图
+    tex_BackgroundMenu = IMG_LoadTexture(cur_Renderer, "TitleBg.png");
+    tex_BackgroundBattle = IMG_LoadTexture(cur_Renderer, "BattleBg.png");
 
 	//字体加载
     font = TTF_OpenFont("assets\\fonts\\SimHei.ttf", 24);
@@ -128,7 +131,7 @@ void Game::InitBattle(CharacterID playerID)
     SetupDialogue(playerID);
     SetupEnemyPhases(playerID);
     currentPhaseIndex = 0;
-    powerUpSpawnTimer = 0;
+    powerUpSpawnTimer = 1.0f + (rand() % 200) / 100.0f;
     shootTimer = 0;
     enemyShootTimer = 0.5f;
 }
@@ -410,8 +413,31 @@ void Game::Update(float DeltaTime)
         // 生成P点
         powerUpSpawnTimer -= DeltaTime;
         if (powerUpSpawnTimer <= 0) {
-            powerUps.push_back(new PowerUp(50 + rand() % 540, -20, tex_PowerUp));
-            powerUpSpawnTimer = 3.0f;
+            // 1. 随机决定这次掉落几个 P 点 (比如 3 到 6 个)
+            //    rand() % 4 会生成 0~3，加上 3 就是 3~6
+            int batchCount = 3 + rand() % 4;
+
+            // 2. 决定这一批掉落的“中心位置” X 坐标
+            //    原来的 50 + rand() % 540 太窄了，我给你扩大到全屏范围 (200 ~ 1720)
+            //    避免生成在太靠边的地方捡不到
+            float batchCenterX = 200.0f + rand() % 1520;
+
+            // 3. 循环生成
+            for (int i = 0; i < batchCount; i++) {
+
+                // 给每个 P 点一点细微的位置偏移，防止它们完全重叠在一起显得很假
+                float offsetX = (float)(rand() % 60 - 30); // -30 到 30 的偏移
+                float offsetY = (float)(rand() % 60 - 30); // -30 到 30 的偏移
+
+                // 生成！初始 Y 设为 -50 (屏幕上方外面一点点)
+                // 注意：PowerUp 的构造函数里已经写了随机的 Velocity.x，
+                // 所以它们生成后会自动向左右散开，不用在这里写散开逻辑，很省事喵！
+                powerUps.push_back(new PowerUp(batchCenterX + offsetX, -50.0f + offsetY, tex_PowerUp));
+            }
+
+            // 4. 重置计时器 (加入一点随机性，让节奏感更自然)
+            //    现在每隔 4.0 到 6.0 秒掉落一批
+            powerUpSpawnTimer = 4.0f + (rand() % 20) / 10.0f;
         }
 
         // Boss逻辑
@@ -510,7 +536,28 @@ void Game::Update(float DeltaTime)
 
         // 碰撞：吃P点
         for (auto p : powerUps) {
-            if (p->active && player && player->CheckCollision(p)) {
+            // 原来的写法（太严苛了，注释掉）：
+            // if (p->active && player && player->CheckCollision(p)) {
+
+            // ★★★ 新的写法：AABB 矩形碰撞检测 ★★★
+            // 只要 P点 进入这个范围，就算吃到
+            // 既然要“角色边缘”，我们就给一个比判定点大得多的宽和高
+
+            // 1. 定义捡东西的判定范围 (这里设为宽60, 高80，大约是角色贴图的大小)
+            // 数值越大，捡东西越容易，你可以自己调
+            float pickUpWidth = 60.0f;
+            float pickUpHeight = 80.0f;
+
+            // 2. 计算玩家和P点的距离 (绝对值)
+            // std::abs 需要 #include <cmath> 或 <algorithm>
+            float diffX = std::abs(player->Position.x - p->Position.x);
+            float diffY = std::abs(player->Position.y - p->Position.y);
+
+            // 3. 矩形碰撞公式：如果 X轴距离 < (玩家宽/2 + 道具宽/2) 且 Y轴距离 < (玩家高/2 + 道具高/2)
+            // 这里我们简化一下，直接判断是否在 pickUp 范围内
+            bool isColliding = (diffX < pickUpWidth / 2) && (diffY < pickUpHeight / 2);
+
+            if (p->active && player && isColliding) {
                 if (player->CollectPowerUp()) {
                     if (se_PowerUp) Mix_PlayChannel(-1, se_PowerUp, 0);
                 }
@@ -560,6 +607,22 @@ void Game::Render()
     // ============================================================
     SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 0, 255);
     SDL_RenderClear(cur_Renderer);
+    SDL_Rect bgRect = { 0, 0, 1920, 1080 };
+    if (CurrentState == State::MAIN_MENU ||
+        CurrentState == State::VOLUME_SETTINGS ||
+        CurrentState == State::SELECT_CHARACTER)
+    {
+        if (tex_BackgroundMenu) {
+            SDL_RenderCopy(cur_Renderer, tex_BackgroundMenu, NULL, &bgRect);
+        }
+    }
+    // B. 如果在 战斗 / 对话 / 结算 界面，画战斗背景
+    else
+    {
+        if (tex_BackgroundBattle) {
+            SDL_RenderCopy(cur_Renderer, tex_BackgroundBattle, NULL, &bgRect);
+        }
+    }
     if (CurrentState == State::MAIN_MENU) {
         if (font) {
             // --- [1. 绘制游戏大标题] ---
@@ -920,5 +983,7 @@ void Game::Clean() {
     // 记得销毁所有Texture和指针
     SDL_DestroyRenderer(cur_Renderer);
     SDL_DestroyWindow(cur_Window);
+    SDL_DestroyTexture(tex_BackgroundMenu);
+    SDL_DestroyTexture(tex_BackgroundBattle);
     TTF_Quit(); IMG_Quit(); SDL_Quit();
 }

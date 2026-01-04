@@ -53,6 +53,8 @@ public:
     SDL_Texture* tex_EnemyBullet;
     SDL_Texture* tex_PlayerBullet;
     SDL_Texture* tex_PowerUp;
+    SDL_Texture* tex_BackgroundMenu;
+	SDL_Texture* tex_BackgroundBattle;
     //字体
     TTF_Font* font;
     //音乐
@@ -105,7 +107,7 @@ public:
     void SetupDialogue(CharacterID playerID);
     void SetupEnemyPhases(CharacterID playerID);
     void CheckEnemyPhase();
-    void TriggerPhaseDialogue(int phaseIndex);
+    //void TriggerPhaseDialogue(int phaseIndex);
 
     // 辅助函数：加载图片并去色
     SDL_Texture* LoadTextureWithColorKey(const char* filename);
