@@ -83,11 +83,11 @@ bool Game::Init()
     se_Shoot = Mix_LoadWAV("assets\\sfx\\player_shoot.wav");
 	se_EnemyShoot1 = Mix_LoadWAV("assets\\sfx\\enemy_shoot1.wav");
     se_EnemyShoot2 = Mix_LoadWAV("assets\\sfx\\enemy_shoot2.wav");
-    //se_Hit = Mix_LoadWAV("assets\\sfx\\命中.wav");
     se_Dead = Mix_LoadWAV("assets\\sfx\\playerdead.wav");
     se_Victory = Mix_LoadWAV("assets\\sfx\\victory.mov");
 	se_PowerUp = Mix_LoadWAV("assets\\sfx\\power_up.wav");
     se_Select= Mix_LoadWAV("assets\\sfx\\select.wav");
+    se_BeHitted = Mix_LoadWAV("assets\\sfx\\playerbehitted.wav");
     if (!se_Shoot || !se_EnemyShoot1 || !se_EnemyShoot2 || !se_Dead || !se_Victory || !se_PowerUp) {
         std::cout << "SFX Load Failed!" << std::endl;
 	}
@@ -495,15 +495,29 @@ void Game::Update(float DeltaTime)
             }
         }
 
-        // 碰撞：子弹打玩家
+        // 碰撞：子弹打玩家 (已适配东方残机与无敌机制)
         for (auto b : enemyBullets) {
-            if (b->active && player && player->CheckCollision(b)) {
-                player->hit(10);
-                b->active = false;
+            // 只有在子弹激活、玩家存在，且玩家当前【不在】无敌状态时才检测碰撞
+            if (b->active && player && !player->isInvincible && player->CheckCollision(b)) {
+
+                b->active = false;      // 销毁击中玩家的子弹
+                player->lives--;        // 减少一个残机 (原作机制：Miss)
+
                 if (player->Dead_judge()) {
-                    if (se_Dead) Mix_PlayChannel(-1, se_Dead, 0); // 玩家死亡音效
-                    Mix_HaltMusic(); // 停止BGM
+                    // 残机小于 0，彻底游戏结束
+                    Mix_HaltMusic();    // 停止背景音乐
+                    if (se_Dead) Mix_PlayChannel(-1, se_Dead, 0);
                     CurrentState = State::GAME_OVER;
+                }
+                else {
+                    if (se_BeHitted) Mix_PlayChannel(-1, se_BeHitted, 0);
+                    // 还有残机：执行重置逻辑
+                    // 调用你 Player 类中新写的 ResetPosition()
+                    // 该函数会将玩家移回底部中心，并设置 3 秒无敌和闪烁开关
+                    player->ResetPosition();
+
+                    // 可选：清除当前屏幕上的所有敌方子弹 (原作中被击中通常会消弹)
+                    // for (auto eb : enemyBullets) eb->active = false;
                 }
             }
         }
@@ -745,43 +759,47 @@ void Game::Render()
         // 道具
         for (auto p : powerUps) if (p->active) p->Render(cur_Renderer);
 
-        // 2. 绘制 UI (血条与数值)
+        // 2. 绘制 UI (残机与 Power 展示)
         if (font && player) {
             // --- [参数定义] ---
             int uiX = 108;           // UI 起始 X 坐标
             int uiY = 100;           // UI 起始 Y 坐标
-            int barW = 300;         // 血条总宽度
-            int barH = 20;          // 血条高度
-            float hpPercent = player->hp / player->max_hp; // 计算血量比例
-            if (hpPercent < 0) hpPercent = 0;
 
-            // --- [1. 绘制血条底槽 (深灰色背景)] ---
-            SDL_Rect bgRect = { uiX, uiY, barW, barH };
-            SDL_SetRenderDrawColor(cur_Renderer, 50, 50, 50, 255);
-            SDL_RenderFillRect(cur_Renderer, &bgRect);
+            // --- [1. 构建残机显示字符串] ---
+            // 东方风格：Player [ ★ ★ ★ ]
+            std::string lifeStr = "Player: ";
+            for (int i = 0; i < player->lives; i++) {
+                lifeStr += "★ ";
+            }
+            if (player->lives <= 0) lifeStr += "None"; // 0残机时的提示
 
-            // --- [2. 绘制实际血条 (红色动态条)] ---
-            SDL_Rect hpRect = { uiX, uiY, (int)(barW * hpPercent), barH };
-            SDL_SetRenderDrawColor(cur_Renderer, 255, 0, 0, 255); // 红色代表血量
-            SDL_RenderFillRect(cur_Renderer, &hpRect);
+            // --- [2. 渲染残机文字] ---
+            SDL_Color pink = { 255, 105, 180, 255 }; // 东方 UI 常用粉红色或纯白色
+            SDL_Surface* sLife = TTF_RenderUTF8_Blended(font, lifeStr.c_str(), pink);
+            if (sLife) {
+                SDL_Texture* tLife = SDL_CreateTextureFromSurface(cur_Renderer, sLife);
+                SDL_Rect rectLife = { uiX, uiY, sLife->w, sLife->h };
+                SDL_RenderCopy(cur_Renderer, tLife, NULL, &rectLife);
 
-            // --- [3. 绘制边框 (白色外框)] ---
-            SDL_SetRenderDrawColor(cur_Renderer, 200, 200, 200, 255);
-            SDL_RenderDrawRect(cur_Renderer, &bgRect);
+                // 渲染完立即释放，防止内存泄漏
+                SDL_FreeSurface(sLife);
+                SDL_DestroyTexture(tLife);
+            }
 
-            // --- [4. 绘制文字数值 (HP 与 Power)] ---
-            char buf[64];
-            sprintf_s(buf, "HP: %.0f / %.0f  Power: %d", player->hp, player->max_hp, player->powerLevel);
+            // --- [3. 渲染 Power 数值] ---
+            // 东方风格：Power [ 1.00 / 3.00 ]
+            char powerBuf[64];
+            sprintf_s(powerBuf, "Power:  %d . %02d / 3.00", player->powerLevel, player->powerCount % 10);
 
-            SDL_Surface* s = TTF_RenderUTF8_Blended(font, buf, { 255, 255, 255, 255 });
-            if (s) {
-                SDL_Texture* t = SDL_CreateTextureFromSurface(cur_Renderer, s);
-                // 将文字放在血条的正下方 (偏移 25 像素)
-                SDL_Rect textDst = { uiX, uiY + barH + 5, s->w, s->h };
-                SDL_RenderCopy(cur_Renderer, t, NULL, &textDst);
+            SDL_Surface* sPower = TTF_RenderUTF8_Blended(font, powerBuf, { 255, 255, 255, 255 });
+            if (sPower) {
+                SDL_Texture* tPower = SDL_CreateTextureFromSurface(cur_Renderer, sPower);
+                // 将 Power 文字放在 Player 文字下方 (偏移 40 像素)
+                SDL_Rect rectPower = { uiX, uiY + 40, sPower->w, sPower->h };
+                SDL_RenderCopy(cur_Renderer, tPower, NULL, &rectPower);
 
-                SDL_FreeSurface(s);
-                SDL_DestroyTexture(t);
+                SDL_FreeSurface(sPower);
+                SDL_DestroyTexture(tPower);
             }
         }
         // 3. 绘制 Boss 血条 (顶部居中长条)
@@ -910,11 +928,11 @@ void Game::Clean() {
     Mix_FreeChunk(se_Shoot);
     Mix_FreeChunk(se_EnemyShoot1);
     Mix_FreeChunk(se_EnemyShoot2);
-    //Mix_FreeChunk(se_Hit);
     Mix_FreeChunk(se_Dead);
     Mix_FreeChunk(se_Victory);
     Mix_FreeChunk(se_PowerUp);
     Mix_FreeChunk(se_Select);
+    Mix_FreeChunk(se_BeHitted);
     // 关闭音频设备
     Mix_CloseAudio();
     // 记得销毁所有Texture和指针
