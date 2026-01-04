@@ -710,7 +710,7 @@ void Game::Render()
         if (font && player) {
             // --- [参数定义] ---
             int uiX = 108;           // UI 起始 X 坐标
-            int uiY = 60;           // UI 起始 Y 坐标
+            int uiY = 100;           // UI 起始 Y 坐标
             int barW = 300;         // 血条总宽度
             int barH = 20;          // 血条高度
             float hpPercent = player->hp / player->max_hp; // 计算血量比例
