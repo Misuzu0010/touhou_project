@@ -11,13 +11,13 @@ public:
     //float max_hp;
     int lives;
     int powerLevel;
-    int powerCount;
+    float powerValue;
     float attack_point;
     SDL_Texture* texture;
 
     float invincTimer;   // 无敌剩余时间
     bool isInvincible;   // 是否处于无敌状态
-    bool visible = true;        // 闪烁控制：当前是否显示
+    bool visible=true;        // 闪烁控制：当前是否显示
     float flashTimer;    // 闪烁频率计时器
 
     // 动画控制变量
@@ -25,8 +25,8 @@ public:
     double currentAngle; // 当前倾斜角度
 
     Player(float x, float y, SDL_Texture* tex)
-        : Entity(x, y, 3.0f), lives(3), powerLevel(0), powerCount(0), attack_point(20), texture(tex),
-        visualTime(0.0f), currentAngle(0.0)
+        : Entity(x, y, 3.0f), lives(3), powerLevel(0), powerValue(0.0f), attack_point(20), texture(tex),
+        invincTimer(0.0f), isInvincible(false), flashTimer(0.0f)
     {
     }
 
@@ -54,13 +54,16 @@ public:
             // 实现闪烁特效：每 0.1 秒切换一次可见性
             if (flashTimer <= 0) {
                 visible = !visible;
-                flashTimer = 0.2f;
+                flashTimer = 0.15f;
             }
 
             if (invincTimer <= 0) {
                 isInvincible = false;
                 visible = true; // 确保无敌结束后是显示的
             }
+        }
+        else {
+            visible = true; // 确保非无敌状态不消失
         }
 
         // --- 1. 基础移动 (保持不变) ---
@@ -159,12 +162,15 @@ public:
     bool Dead_judge() { return lives < 0; }
 
     int CollectPowerUp() {
-        powerCount++;
-        // 移除了 HP 增加逻辑，改为东方原作的 Power 系统
-        if (powerCount % 10 == 0 && powerLevel < 3) {
+        if (powerLevel >= 4) return 0; // 假设最高 4.00
+
+        powerValue += 0.05f; // 每个 P 点增加 0.05
+
+        if (powerValue >= 1.0f) {
+            powerValue -= 1.0f; // 溢出转入下一级
             powerLevel++;
-            return 1;
+            return 1; // 升级了
         }
-        return 0;
+        return 2; // 捡到了但未升级
     }
 };

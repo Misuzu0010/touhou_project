@@ -48,7 +48,7 @@ bool Game::Init()
         std::cout << "SDL_mixer Error: " << Mix_GetError() << std::endl;
         return false;
     }
-    Mix_AllocateChannels(32);
+    Mix_AllocateChannels(64);
  
 
     cur_Window = SDL_CreateWindow("Touhou STG - CyberSecurity",
@@ -502,6 +502,7 @@ void Game::Update(float DeltaTime)
 
                 b->active = false;      // 销毁击中玩家的子弹
                 player->lives--;        // 减少一个残机 (原作机制：Miss)
+  
 
                 if (player->Dead_judge()) {
                     // 残机小于 0，彻底游戏结束
@@ -511,9 +512,11 @@ void Game::Update(float DeltaTime)
                 }
                 else {
                     if (se_BeHitted) Mix_PlayChannel(-1, se_BeHitted, 0);
-                    // 还有残机：执行重置逻辑
-                    // 调用你 Player 类中新写的 ResetPosition()
-                    // 该函数会将玩家移回底部中心，并设置 3 秒无敌和闪烁开关
+                    /// ★★★ 核心修改：被击中后全屏消弹 ★★★
+                    // 东方原作中，Miss 后屏幕上的子弹会全部消失
+                    for (auto eb : enemyBullets) {
+                        eb->active = false;
+                    }
                     player->ResetPosition();
 
                     // 可选：清除当前屏幕上的所有敌方子弹 (原作中被击中通常会消弹)
@@ -525,7 +528,7 @@ void Game::Update(float DeltaTime)
         // 碰撞：吃P点
         for (auto p : powerUps) {
             if (p->active && player && player->CheckCollision(p)) {
-                if (player->CollectPowerUp()) {
+                if (player->CollectPowerUp()==1) {
                     if (se_PowerUp) Mix_PlayChannel(-1, se_PowerUp, 0);
                 }
                 p->active = false;
@@ -548,23 +551,67 @@ void Game::Update(float DeltaTime)
 
     case State::GAME_OVER:
     case State::VICTORY:
+    {
         static bool escPressed = false;
+        static bool rPressed = false;
 
-        if (key[SDL_SCANCODE_ESCAPE] && !escPressed) {
-            // 1. 切换游戏状态回到主菜单
-            CurrentState = State::MAIN_MENU;
-            menuSelect = 0; // 重置菜单光标到第一项
-
-            // 2. 音乐切换核心代码
-            if (bgm_Menu) {
-                Mix_HaltMusic();             // 停止当前所有正在播放的背景音乐
-                Mix_PlayMusic(bgm_Menu, -1); // 重新循环播放主菜单背景音乐 (-1代表无限循环)
+        if (key[SDL_SCANCODE_ESCAPE]) {
+            if (!escPressed) {
+                CurrentState = State::MAIN_MENU;
+                menuSelect = 0;
+                if (bgm_Menu) {
+                    Mix_HaltMusic();
+                    Mix_PlayMusic(bgm_Menu, -1);
+                }
+                escPressed = true;
             }
-            if (!key[SDL_SCANCODE_ESCAPE]) {
-                escPressed = false;
-            }
-            break;
         }
+        else {
+            escPressed = false; // 抬起按键时重置
+        }
+
+        if (CurrentState == State::GAME_OVER) {
+            // --- 1. 倒计时逻辑 ---
+            continueTimer -= DeltaTime;
+            if (continueTimer <= 0) {
+                // 时间到，强制回到主菜单
+                CurrentState = State::MAIN_MENU;
+                if (bgm_Menu) {
+                    Mix_HaltMusic();
+                    Mix_PlayMusic(bgm_Menu, -1);
+                }
+                continueTimer = 10.0f; // 重置计时器供下次使用
+                break;
+            }
+            // --- 2. 续关 (按 R) ---
+            if (key[SDL_SCANCODE_R]) {
+                if (!rPressed) {
+                    // --- 东方传统续关重置 ---
+                    player->lives = 3;           // 恢复残机
+                    player->powerLevel = 0;      // 续关惩罚：火力清零或降级
+                    player->powerValue = 0;
+                    //player->grazeCount = 0;      // 擦弹清零
+                    player->ResetPosition();     // 移动到初始点并开启3秒无敌/闪烁
+
+                    // 清理屏幕弹幕，给玩家喘息机会
+                    for (auto b : enemyBullets) b->active = false;
+
+                    // 恢复战斗音乐
+                    if (bgm_Battle) {
+                        Mix_HaltMusic();
+                        Mix_PlayMusic(bgm_Battle, -1);
+                    }
+
+                    CurrentState = State::PLAYING;
+                    rPressed = true;
+                }
+            }
+            else {
+                rPressed = false; // 抬起按键时重置
+            }
+        }
+        break;
+    }
     }
 }
 void Game::Render()
@@ -789,7 +836,8 @@ void Game::Render()
             // --- [3. 渲染 Power 数值] ---
             // 东方风格：Power [ 1.00 / 3.00 ]
             char powerBuf[64];
-            sprintf_s(powerBuf, "Power:  %d . %02d / 3.00", player->powerLevel, player->powerCount % 10);
+            float totalPower = (float)player->powerLevel + player->powerValue;
+            sprintf_s(powerBuf, "Power:  %.2f / 3.00", totalPower);
 
             SDL_Surface* sPower = TTF_RenderUTF8_Blended(font, powerBuf, { 255, 255, 255, 255 });
             if (sPower) {
@@ -904,15 +952,55 @@ void Game::Render()
     // ============================================================
     else if (CurrentState == State::VICTORY || CurrentState == State::GAME_OVER) {
         if (font) {
-            const char* msg = (CurrentState == State::VICTORY) ? "VICTORY! (按下ESC返回)" : "满身疮痍 (按下ESC返回)";
+            // --- 1. 绘制半透明遮罩 (增强氛围感) ---
+            SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 0, 150); // 黑色半透明
+            SDL_Rect fullScreen = { 0, 0, 1920, 1080 };
+            SDL_RenderFillRect(cur_Renderer, &fullScreen);
+
+            // --- 2. 准备主提示文字 ---
+            const char* msg = (CurrentState == State::VICTORY) ? "VICTORY!" : "满身疮痍";
             SDL_Color color = (CurrentState == State::VICTORY) ? SDL_Color{ 255, 255, 0, 255 } : SDL_Color{ 255, 0, 0, 255 };
 
             SDL_Surface* surf = TTF_RenderUTF8_Blended(font, msg, color);
             if (surf) {
                 SDL_Texture* t = SDL_CreateTextureFromSurface(cur_Renderer, surf);
-                SDL_Rect dst = { (1920 - surf->w) / 2, (1080 - surf->h) / 2, surf->w, surf->h };
+                SDL_Rect dst = { (1920 - surf->w) / 2, (1080 - surf->h) / 2 - 50, surf->w, surf->h };
                 SDL_RenderCopy(cur_Renderer, t, NULL, &dst);
                 SDL_FreeSurface(surf); SDL_DestroyTexture(t);
+            }
+
+            // --- 3. [新增] 绘制倒计时数字 (仅在 GAME_OVER 时) ---
+            if (CurrentState == State::GAME_OVER) {
+                char countBuf[64];
+                // 使用 ceil 向上取整，让玩家看到从 10 开始倒数
+                sprintf_s(countBuf, "%d 秒后返回菜单", (int)ceil(continueTimer));
+
+                // 倒计时小于3秒变红，增加紧张感
+                SDL_Color tColor = (continueTimer > 3.0f) ? SDL_Color{ 255, 255, 255, 255 } : SDL_Color{ 255, 50, 50, 255 };
+
+                SDL_Surface* sCount = TTF_RenderUTF8_Blended(font, countBuf, tColor);
+                if (sCount) {
+                    SDL_Texture* tCount = SDL_CreateTextureFromSurface(cur_Renderer, sCount);
+                    SDL_Rect rCount = { (1920 - sCount->w) / 2, (1080 - sCount->h) / 2, sCount->w, sCount->h };
+                    SDL_RenderCopy(cur_Renderer, tCount, NULL, &rCount);
+                    SDL_FreeSurface(sCount); SDL_DestroyTexture(tCount);
+                }
+            }
+
+            // --- 4. 准备交互提示文字 (续关与退出) ---
+            // 只有在 GAME_OVER 时才显示“按R续关”
+            std::string hintStr = (CurrentState == State::GAME_OVER) ?
+                "按下 R 键不屈续关 / 按下 ESC 返回主菜单" :
+                "按下 ESC 返回主菜单";
+
+            SDL_Surface* hintSurf = TTF_RenderUTF8_Blended(font, hintStr.c_str(), { 255, 255, 255, 255 });
+            if (hintSurf) {
+                SDL_Texture* ht = SDL_CreateTextureFromSurface(cur_Renderer, hintSurf);
+                // 放在主标题下方 100 像素的位置
+                SDL_Rect hDst = { (1920 - hintSurf->w) / 2, (1080 - hintSurf->h) / 2 + 80, hintSurf->w, hintSurf->h };
+                SDL_RenderCopy(cur_Renderer, ht, NULL, &hDst);
+                SDL_FreeSurface(hintSurf); SDL_DestroyTexture(ht);
             }
         }
     }
@@ -939,4 +1027,22 @@ void Game::Clean() {
     SDL_DestroyRenderer(cur_Renderer);
     SDL_DestroyWindow(cur_Window);
     TTF_Quit(); IMG_Quit(); SDL_Quit();
+    // 清理失效对象 (非常重要！)
+    enemyBullets.erase(std::remove_if(enemyBullets.begin(), enemyBullets.end(),
+        [](Bullet* b) {
+            if (!b->active) { delete b; return true; }
+            return false;
+        }), enemyBullets.end());
+
+    playerBullets.erase(std::remove_if(playerBullets.begin(), playerBullets.end(),
+        [](Bullet* b) {
+            if (!b->active) { delete b; return true; }
+            return false;
+        }), playerBullets.end());
+
+    powerUps.erase(std::remove_if(powerUps.begin(), powerUps.end(),
+        [](PowerUp* p) {
+            if (!p->active) { delete p; return true; }
+            return false;
+        }), powerUps.end());
 }

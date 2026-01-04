@@ -92,6 +92,7 @@ public:
     float enemyShootTimer;
     float powerUpSpawnTimer;
     float powerUpSpawnInterval;
+    float continueTimer = 10.0f; // 续关倒计时，初始10秒
 
     Game();
     bool Init();
