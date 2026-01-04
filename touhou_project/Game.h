@@ -61,13 +61,15 @@ public:
     Mix_Music* bgm_Battle = nullptr; // 战斗背景音乐
     //音效
 	Mix_Chunk* se_Shoot = nullptr;
-    Mix_Chunk* se_EnemyShoot = nullptr;
+    Mix_Chunk* se_EnemyShoot1 = nullptr;
+    Mix_Chunk* se_EnemyShoot2 = nullptr;
     //Mix_Chunk* se_Hit = nullptr;
     Mix_Chunk* se_Dead = nullptr;
     Mix_Chunk* se_Victory = nullptr;
     Mix_Chunk* se_PowerUp = nullptr;
-    int bgmVolume = 64; // 初始音量设为一半 (0-128)
-    int sfxVolume = 64;  // 音效音量 (0-128)
+    Mix_Chunk * se_Select = nullptr;
+    int bgmVolume = 32; // 初始音量设为一半 (0-128)
+    int sfxVolume = 32;  // 音效音量 (0-128)
     int volMenuSelect = 0; // 0: 调节BGM, 1: 调节音效, 2: 返回
 
     // 游戏对象

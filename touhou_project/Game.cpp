@@ -47,6 +47,8 @@ bool Game::Init()
         std::cout << "SDL_mixer Error: " << Mix_GetError() << std::endl;
         return false;
     }
+    Mix_AllocateChannels(32);
+ 
 
     cur_Window = SDL_CreateWindow("Touhou STG - CyberSecurity",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1920, 1080, SDL_WINDOW_SHOWN);
@@ -72,18 +74,20 @@ bool Game::Init()
     if (!font) std::cout << "Font load failed!" << std::endl;
 
     //bgm加载
-    bgm_Menu = Mix_LoadMUS("assets\\audios\\まらしぃ - 少女眠想曲　～ Dream Battle.mp3");
-    bgm_Battle = Mix_LoadMUS("assets\\audios\\上海アリス幻樂団 - 少女幻葬　～ Necro-Fantasy.mp3");
+    bgm_Menu = Mix_LoadMUS("assets\\audios\\Dream Battle.mp3");
+    bgm_Battle = Mix_LoadMUS("assets\\audios\\Necro-Fantasy.mp3");
     if (!bgm_Menu) std::cout << "BGM Load Failed!" << std::endl;
 
 	//音效加载
-    se_Shoot = Mix_LoadWAV("assets\\sfx\\灵击.wav");
-	se_EnemyShoot = Mix_LoadWAV("assets\\sfx\\弹幕展开tan.wav");
+    se_Shoot = Mix_LoadWAV("assets\\sfx\\player_shoot.wav");
+	se_EnemyShoot1 = Mix_LoadWAV("assets\\sfx\\enemy_shoot1.wav");
+    se_EnemyShoot2 = Mix_LoadWAV("assets\\sfx\\enemy_shoot2.wav");
     //se_Hit = Mix_LoadWAV("assets\\sfx\\命中.wav");
-    se_Dead = Mix_LoadWAV("assets\\sfx\\死亡音效.wav");
-    se_Victory = Mix_LoadWAV("assets\\sfx\\胜利音效.wav");
-	se_PowerUp = Mix_LoadWAV("assets\\sfx\\火力升级.wav");
-    if (!se_Shoot || !se_EnemyShoot ||  !se_Dead || !se_Victory || !se_PowerUp) {
+    se_Dead = Mix_LoadWAV("assets\\sfx\\playerdead.wav");
+    se_Victory = Mix_LoadWAV("assets\\sfx\\victory.mov");
+	se_PowerUp = Mix_LoadWAV("assets\\sfx\\power_up.wav");
+    se_Select= Mix_LoadWAV("assets\\sfx\\select.wav");
+    if (!se_Shoot || !se_EnemyShoot1 || !se_EnemyShoot2 || !se_Dead || !se_Victory || !se_PowerUp) {
         std::cout << "SFX Load Failed!" << std::endl;
 	}
 
@@ -246,18 +250,22 @@ void Game::Update(float DeltaTime)
         if (!keyLock) {
             if (key[SDL_SCANCODE_UP]) {
                 if (menuSelect > 0) menuSelect--;
+                if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
                 keyLock = true;
             }
             if (key[SDL_SCANCODE_DOWN]) {
-				if (menuSelect < 2) menuSelect++; // 目前只有两个按钮：开始和退出  后续可以根据主菜单功能加更多
+				if (menuSelect < 2) menuSelect++; // 目前只有3个按钮：开始 音量 退出  后续可以根据主菜单功能加更多
+                if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
                 keyLock = true;
             }
             if (key[SDL_SCANCODE_Z]) {
                 if (menuSelect == 0) {
                     CurrentState = State::SELECT_CHARACTER;
+                    if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
                 }
                 else if (menuSelect == 1) {
                     CurrentState = State::VOLUME_SETTINGS;
+                    if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
                 }
                 else if (menuSelect == 2) is_Running = false;
                 keyLock = true;
@@ -278,36 +286,42 @@ void Game::Update(float DeltaTime)
             // 1. 上下键选择调节对象
             if (key[SDL_SCANCODE_UP]) {
                 if (volMenuSelect > 0) volMenuSelect--;
+                if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
                 keyLock = true;
             }
             else if (key[SDL_SCANCODE_DOWN]) {
                 if (volMenuSelect < 2) volMenuSelect++;
+                if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
                 keyLock = true;
             }
 
             // 2. 左右键调节数值
             if (volMenuSelect == 0) { // 调节 BGM
                 if (key[SDL_SCANCODE_LEFT] && bgmVolume > 0) {
-                    bgmVolume -= 8;
+                    bgmVolume -= 4;
                     Mix_VolumeMusic(bgmVolume);
+                    if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
                     keyLock = true;
                 }
-                if (key[SDL_SCANCODE_RIGHT] && bgmVolume < 128) {
-                    bgmVolume += 8;
+                if (key[SDL_SCANCODE_RIGHT] && bgmVolume < 64) {
+                    bgmVolume += 4;
                     Mix_VolumeMusic(bgmVolume);
+                    if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
                     keyLock = true;
                 }
             }
             else if (volMenuSelect == 1) { // 调节音效
                 if (key[SDL_SCANCODE_LEFT] && sfxVolume > 0) {
-                    sfxVolume -= 8;
+                    sfxVolume -= 4;
                     // Mix_Volume(-1, vol) 调节所有音效频道
                     Mix_Volume(-1, sfxVolume);
+                    if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
                     keyLock = true;
                 }
                 if (key[SDL_SCANCODE_RIGHT] && sfxVolume < 128) {
-                    sfxVolume += 8;
+                    sfxVolume += 4;
                     Mix_Volume(-1, sfxVolume);
+                    if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
                     keyLock = true;
                 }
             }
@@ -315,6 +329,7 @@ void Game::Update(float DeltaTime)
             // 3. 确认返回
             if (key[SDL_SCANCODE_Z] || key[SDL_SCANCODE_ESCAPE]) {
                 if (volMenuSelect == 2 || key[SDL_SCANCODE_ESCAPE]) {
+                    if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
                     CurrentState = State::MAIN_MENU;
                 }
                 keyLock = true;
@@ -334,10 +349,17 @@ void Game::Update(float DeltaTime)
     {
 
         if (!keyLock) {
-            if (key[SDL_SCANCODE_LEFT]) menuCursor = 0;
-            if (key[SDL_SCANCODE_RIGHT]) menuCursor = 1;
+            if (key[SDL_SCANCODE_LEFT]) {
+                menuCursor = 0;
+                if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
+            }
+            if (key[SDL_SCANCODE_RIGHT]) {
+                menuCursor = 1;
+                if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
+            }
 			if (key[SDL_SCANCODE_ESCAPE]) CurrentState = State::MAIN_MENU;
             if (key[SDL_SCANCODE_Z]) {
+                if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
                 selectedCharID = (menuCursor == 0) ? CharacterID::REIMU : CharacterID::MARISA;
                 InitBattle(selectedCharID);
                 Mix_FadeOutMusic(500); // 500ms 内淡出
@@ -356,6 +378,7 @@ void Game::Update(float DeltaTime)
         static bool zPressed = false;
         if (key[SDL_SCANCODE_Z] && !zPressed) {
             cur_index++;
+            if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
             if (cur_index >= DialoueQueue.size()) CurrentState = stateBeforeDialogue;
             zPressed = true;
         }
@@ -396,12 +419,25 @@ void Game::Update(float DeltaTime)
         // ==========================================================
         enemyShootTimer -= DeltaTime;
         static float angleOffset = 0; // 用于让弹幕旋转起来
-
+        static float enemySeCooldown = 0.0f;
+        enemySeCooldown -= DeltaTime;
+       
         if (!Enemies.empty() && Enemies[0]->active) {
             if (enemyShootTimer <= 0) {
                 // 根据 currentPhaseIndex 决定攻击方式
                 // 0: 初始阶段, 1: 警告阶段, 2: 暴走阶段 (你可以自己去 SetupEnemyPhases 里加更多阶段)
-                if (se_EnemyShoot) Mix_PlayChannel(-1, se_EnemyShoot, 0);
+                if (enemySeCooldown <= 0) {
+                    if (currentPhaseIndex >= 2 || Enemies[0]->GetBlood() < 2000) {
+                        // 播放阶段 2 专属的高频/暴走音效
+                        if (se_EnemyShoot2) Mix_PlayChannel(-1, se_EnemyShoot2, 0);
+                        enemySeCooldown = 0.06f; // 阶段 2 射速极快，冷却缩短以配合节奏
+                    }
+                    else {
+                        // 播放阶段 0 和 1 的常规攻击音效
+                        if (se_EnemyShoot1) Mix_PlayChannel(-1, se_EnemyShoot1, 0);
+                        enemySeCooldown = 0.12f; // 普通阶段冷却稍长，听感更清晰
+                    }
+                }
                 // ★阶段 0: 基础弹幕 (绿球)
                 if (currentPhaseIndex == 0) {
 
@@ -786,11 +822,13 @@ void Game::Clean() {
     Mix_FreeMusic(bgm_Menu);
     Mix_FreeMusic(bgm_Battle);
     Mix_FreeChunk(se_Shoot);
-    Mix_FreeChunk(se_EnemyShoot);
+    Mix_FreeChunk(se_EnemyShoot1);
+    Mix_FreeChunk(se_EnemyShoot2);
     //Mix_FreeChunk(se_Hit);
     Mix_FreeChunk(se_Dead);
     Mix_FreeChunk(se_Victory);
     Mix_FreeChunk(se_PowerUp);
+    Mix_FreeChunk(se_Select);
     // 关闭音频设备
     Mix_CloseAudio();
     // 记得销毁所有Texture和指针
