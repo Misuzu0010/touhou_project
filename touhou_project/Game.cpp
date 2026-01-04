@@ -1,7 +1,8 @@
-#pragma execution_character_set("utf-8")  //解决中文不显示问题
+﻿#pragma execution_character_set("utf-8")  //解决中文不显示问题
 #include "Game.h"
-#include <iostream>
 #include <algorithm>
+#include <iostream> // 杂鱼主人漏了这个，导致 std::cout 报错
+#include <cstdio>   // 漏了这个，导致 sprintf_s 报错
 #include <cstdlib>
 #include <ctime>
 
@@ -138,38 +139,40 @@ void Game::SetupDialogue(CharacterID playerID) {
     cur_index = 0;
     CurrentState = State::DIALOGUE;
     stateBeforeDialogue = State::PLAYING;
-    if (playerID == CharacterID::REIMU) {
+
+    if (playerID == CharacterID::REIMU)
+    {
+        // 这里的中文我重新敲了一遍，防止有奇怪的不可见字符
         DialoueQueue.push_back({ "Reimu", "魔理沙，快停止这场 DDOS 攻击！", {255,100,100,255} });
         DialoueQueue.push_back({ "Marisa", "嘿嘿，我的僵尸网络可是无懈可击的，DAZE！", {255,255,100,255} });
     }
-    else {
+    else if (playerID == CharacterID::MARISA) // 之前这里直接写 else 容易出歧义，加上具体判断
+    {
         DialoueQueue.push_back({ "Marisa", "灵梦！你的防火墙太脆弱了！", {255,255,100,255} });
         DialoueQueue.push_back({ "Reimu", "那就由我来给你打个补丁吧！", {255,100,100,255} });
     }
 }
-
 // 1. 设置敌人的阶段 (必须把阶段2加进去，不然永远不出手里剑！)
 void Game::SetupEnemyPhases(CharacterID playerID) {
     enemyPhases.clear();
-
-    // --- 阶段 1: 4000血触发 (警告) ---
+    std::string bossName = (playerID == CharacterID::REIMU) ? "Marisa" : "Reimu";
+    std::string SystemName = (playerID == CharacterID::MARISA) ? "Marisa" : "Reimu";
+    // --- 阶段 1 ---
     EnemyPhase p1;
     p1.hpThreshold = 4000;
     p1.dialogueTriggered = false;
-    p1.dialogues.push_back({ "System", "警告：检测到防火墙被突破！", {200,200,200,255} });
-    p1.dialogues.push_back({ "Boss", "部署加密锁，把你的数据都锁死吧！", {255,50,50,255} });
+    p1.dialogues.push_back({ SystemName, "警告：检测到防火墙被突破！", {200,200,200,255} });
+    p1.dialogues.push_back({ bossName, "部署加密锁，把你的数据都锁死吧！", {255,50,50,255} });
     enemyPhases.push_back(p1);
 
-    // --- ★★★ 阶段 2: 2000血触发 (暴走/手里剑) ★★★ ---
-    // 主人之前漏了这个，所以才看不到手里剑！
+    // --- 阶段 2 ---
     EnemyPhase p2;
     p2.hpThreshold = 2000;
     p2.dialogueTriggered = false;
-    p2.dialogues.push_back({ "System", "严重错误：内核异常！", {255,0,0,255} });
-    p2.dialogues.push_back({ "Boss", "格式化所有分区！全！部！删！除！", {255,0,0,255} });
+    p2.dialogues.push_back({ SystemName, "严重错误：内核异常！", {255,0,0,255} });
+    p2.dialogues.push_back({ bossName, "格式化所有分区！全！部！删！除！", {255,0,0,255} });
     enemyPhases.push_back(p2);
 }
-
 // 2. 检查阶段切换 (顺便清空子弹)
 void Game::CheckEnemyPhase() {
     if (Enemies.empty()) return;
@@ -561,7 +564,7 @@ void Game::Render()
         if (font) {
             // --- [1. 绘制游戏大标题] ---
             SDL_Color white = { 255, 255, 255, 255 };
-            SDL_Surface* titleSurf = TTF_RenderUTF8_Blended(font, "东方代码乡", white);
+            SDL_Surface* titleSurf = TTF_RenderUTF8_Blended(font,"东方代码乡",white);
             if (titleSurf) {
                 SDL_Texture* titleTex = SDL_CreateTextureFromSurface(cur_Renderer, titleSurf);
                 // 将标题放大并居中（1920x1080屏幕）
@@ -619,7 +622,7 @@ void Game::Render()
             }
 
             // --- [5. 绘制页脚提示] ---
-            SDL_Surface* hint = TTF_RenderUTF8_Blended(font, "使用方向键切换，Z 键确认", { 100, 100, 100, 255 });
+            SDL_Surface* hint = TTF_RenderUTF8_Blended(font,"使用方向键切换，Z 键确认",{ 100, 100, 100, 255 });
             if (hint) {
                 SDL_Texture* hTex = SDL_CreateTextureFromSurface(cur_Renderer, hint);
                 SDL_Rect hRect = { (1920 - hint->w) / 2, 950, hint->w, hint->h };

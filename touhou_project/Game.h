@@ -1,5 +1,4 @@
-#pragma once
-#include <SDL.h>
+ï»¿#pragma once
 #include <SDL_image.h>
 #include <SDL_ttf.h>
 #include <SDL_mixer.h>
@@ -13,7 +12,7 @@
 
 enum class State {
     MAIN_MENU,
-    VOLUME_SETTINGS, // ĞÂÔö£ºÒôÁ¿ÉèÖÃ×Ó½çÃæ
+    VOLUME_SETTINGS, // æ–°å¢ï¼šéŸ³é‡è®¾ç½®å­ç•Œé¢
     SELECT_CHARACTER,
     DIALOGUE,
     PLAYING,
@@ -46,20 +45,20 @@ public:
     SDL_Renderer* cur_Renderer;
     bool is_Running;
 
-    //Í¼Æ¬
-    SDL_Texture* tex_PlayerReimu;  // ±³Éí
-    SDL_Texture* tex_PlayerMarisa; // ±³Éí
-    SDL_Texture* tex_Enemy_Reimu;  // ÕıÃæ
-    SDL_Texture* tex_Enemy_Marisa; // ÕıÃæ
+    //å›¾ç‰‡
+    SDL_Texture* tex_PlayerReimu;  // èƒŒèº«
+    SDL_Texture* tex_PlayerMarisa; // èƒŒèº«
+    SDL_Texture* tex_Enemy_Reimu;  // æ­£é¢
+    SDL_Texture* tex_Enemy_Marisa; // æ­£é¢
     SDL_Texture* tex_EnemyBullet;
     SDL_Texture* tex_PlayerBullet;
     SDL_Texture* tex_PowerUp;
-    //×ÖÌå
+    //å­—ä½“
     TTF_Font* font;
-    //ÒôÀÖ
-    Mix_Music* bgm_Menu = nullptr;   // Ö÷²Ëµ¥±³¾°ÒôÀÖ
-    Mix_Music* bgm_Battle = nullptr; // Õ½¶·±³¾°ÒôÀÖ
-    //ÒôĞ§
+    //éŸ³ä¹
+    Mix_Music* bgm_Menu = nullptr;   // ä¸»èœå•èƒŒæ™¯éŸ³ä¹
+    Mix_Music* bgm_Battle = nullptr; // æˆ˜æ–—èƒŒæ™¯éŸ³ä¹
+    //éŸ³æ•ˆ
 	Mix_Chunk* se_Shoot = nullptr;
     Mix_Chunk* se_EnemyShoot1 = nullptr;
     Mix_Chunk* se_EnemyShoot2 = nullptr;
@@ -68,18 +67,19 @@ public:
     Mix_Chunk* se_Victory = nullptr;
     Mix_Chunk* se_PowerUp = nullptr;
     Mix_Chunk * se_Select = nullptr;
-    int bgmVolume = 32; // ³õÊ¼ÒôÁ¿ÉèÎªÒ»°ë (0-128)
-    int sfxVolume = 32;  // ÒôĞ§ÒôÁ¿ (0-128)
-    int volMenuSelect = 0; // 0: µ÷½ÚBGM, 1: µ÷½ÚÒôĞ§, 2: ·µ»Ø
+    int bgmVolume = 32; // åˆå§‹éŸ³é‡è®¾ä¸ºä¸€åŠ (0-128)
+    int sfxVolume = 32;  // éŸ³æ•ˆéŸ³é‡ (0-128)
+    int volMenuSelect = 0; // 0: è°ƒèŠ‚BGM, 1: è°ƒèŠ‚éŸ³æ•ˆ, 2: è¿”å›
 
-    // ÓÎÏ·¶ÔÏó
+
+    // æ¸¸æˆå¯¹è±¡
     Player* player;
     std::vector<Enemy*> Enemies;
     std::vector<Bullet*> playerBullets;
     std::vector<Bullet*> enemyBullets;
     std::vector<PowerUp*> powerUps;
 
-    // Âß¼­¿ØÖÆ
+    // é€»è¾‘æ§åˆ¶
     int menuSelect = 0;
     int menuCursor;
     CharacterID selectedCharID;
@@ -107,6 +107,6 @@ public:
     void CheckEnemyPhase();
     void TriggerPhaseDialogue(int phaseIndex);
 
-    // ¸¨Öúº¯Êı£º¼ÓÔØÍ¼Æ¬²¢È¥É«
+    // è¾…åŠ©å‡½æ•°ï¼šåŠ è½½å›¾ç‰‡å¹¶å»è‰²
     SDL_Texture* LoadTextureWithColorKey(const char* filename);
 };
