@@ -574,6 +574,9 @@ void Game::Update(float DeltaTime)
 
                 if (player->Dead_judge()) {
                     // 残机小于 0，彻底游戏结束
+                    isSpellActive = false;
+                    spellTimer = 0.0f;
+                    shakeTime = 0.0f;
                     Mix_HaltMusic();    // 停止背景音乐
                     if (se_Dead) Mix_PlayChannel(-1, se_Dead, 0);
                     CurrentState = State::GAME_OVER;
@@ -636,6 +639,9 @@ void Game::Update(float DeltaTime)
             if (se_Victory) Mix_PlayChannel(-1, se_Victory, 0); // 胜利音效
             Mix_HaltMusic(); // 停止战斗BGM
             CurrentState = State::VICTORY;
+            isSpellActive = false;
+            spellTimer = 0.0f;
+            shakeTime = 0.0f;
         }
         break;
     }
