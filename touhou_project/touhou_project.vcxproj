@@ -71,9 +71,8 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>C:\sdl\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\sdl\lib\x64;$(LibraryPath)</LibraryPath>
-    <ExecutablePath>C:\sdl\include;$(ExecutablePath)</ExecutablePath>
+    <IncludePath>$(SDL2_DIR)\include;$(SDL2_IMAGE_DIR)\include;$(SDL2_TTF_DIR)\include;$(SDL2_MIXER_DIR)\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(SDL2_DIR)\lib\x64;$(SDL2_IMAGE_DIR)\lib\x64;$(SDL2_TTF_DIR)\lib\x64;$(SDL2_MIXER_DIR)\lib\x64;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -81,6 +80,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -95,6 +95,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -107,14 +108,14 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>D:\SDL2-devel-2.32.10-VC\SDL2-2.32.10\include;D:\SDL2_image-devel-2.8.5-VC\SDL2_image-2.8.5\include;D:\SDL_ttf\SDL2_ttf-2.24.0\include;D:\SDL_Mixer\SDL2_mixer-2.8.1\include</AdditionalIncludeDirectories>
-      <LanguageStandard>Default</LanguageStandard>
+      <AdditionalIncludeDirectories>$(SDL2_DIR)\include;$(SDL2_IMAGE_DIR)\include;$(SDL2_TTF_DIR)\include;$(SDL2_MIXER_DIR)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories> D:\SDL2-devel-2.32.10-VC\SDL2-2.32.10\lib\x64;D:\SDL2_image-devel-2.8.5-VC\SDL2_image-2.8.5\lib\x64;D:\SDL_ttf\SDL2_ttf-2.24.0\lib\x64;D:\SDL_Mixer\SDL2_mixer-2.8.1\lib\x64</AdditionalLibraryDirectories>
-      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);SDL2.lib;SDL2main.lib;SDL2_image.lib;SDL2_ttf.lib;SDL2_mixer.lib;SDL2_mixer.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SDL2_DIR)\lib\x64;$(SDL2_IMAGE_DIR)\lib\x64;$(SDL2_TTF_DIR)\lib\x64;$(SDL2_MIXER_DIR)\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);SDL2.lib;SDL2main.lib;SDL2_image.lib;SDL2_ttf.lib;SDL2_mixer.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -125,12 +126,13 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>D:\SDL2-devel-2.32.10-VC\SDL2-2.32.10\include;D:\SDL2_image-devel-2.8.5-VC\SDL2_image-2.8.5\include;D:\SDL_ttf\SDL2_ttf-2.24.0\include;D:\SDL_Mixer\SDL2_mixer-2.8.1\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SDL2_DIR)\include;$(SDL2_IMAGE_DIR)\include;$(SDL2_TTF_DIR)\include;$(SDL2_MIXER_DIR)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories> D:\SDL2-devel-2.32.10-VC\SDL2-2.32.10\lib\x64;D:\SDL2_image-devel-2.8.5-VC\SDL2_image-2.8.5\lib\x64;D:\SDL_ttf\SDL2_ttf-2.24.0\lib\x64;D:\SDL_Mixer\SDL2_mixer-2.8.1\lib\x64</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SDL2_DIR)\lib\x64;$(SDL2_IMAGE_DIR)\lib\x64;$(SDL2_TTF_DIR)\lib\x64;$(SDL2_MIXER_DIR)\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);SDL2.lib;SDL2main.lib;SDL2_image.lib;SDL2_ttf.lib;SDL2_mixer.lib;</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>

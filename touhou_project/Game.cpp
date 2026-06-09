@@ -1,20 +1,37 @@
 ﻿#pragma execution_character_set("utf-8")  //解决中文不显示问题
 #include "Game.h"
 #include <algorithm>
-#include <iostream> // 杂鱼主人漏了这个，导致 std::cout 报错
-#include <cstdio>   // 漏了这个，导致 sprintf_s 报错
+#include <iostream>
+#include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <memory>
+
+namespace {
+// 全局玩法常量集中放在匿名命名空间，避免屏幕尺寸、音量上限等魔法数字散落。
+constexpr int ScreenWidth = 1920;
+constexpr int ScreenHeight = 1080;
+constexpr float ContinueSeconds = 10.0f;
+constexpr int MaxVolume = 128;
+constexpr int MaxPowerLevel = 4;
 
 BulletPattern bp;
 
-Game::Game() : player(nullptr), tex_PlayerReimu(nullptr), tex_PlayerMarisa(nullptr),
-tex_EnemyBullet(nullptr), tex_PlayerBullet(nullptr), tex_PowerUp(nullptr),tex_BackgroundBattle(nullptr), tex_BackgroundMenu(nullptr),
-font(nullptr), currentPhaseIndex(0), powerUpSpawnTimer(0), powerUpSpawnInterval(3.0f),
-cur_Window(nullptr), cur_Renderer(nullptr), is_Running(false) {
+// 移除 active=false 的对象。容器元素是 unique_ptr，erase 时会自动释放内存。
+template <typename T>
+void RemoveInactiveObjects(std::vector<std::unique_ptr<T>>& objects)
+{
+    objects.erase(std::remove_if(objects.begin(), objects.end(),
+        [](const std::unique_ptr<T>& object) {
+            return object && !object->IsActive();
+        }), objects.end());
+}
 }
 
-// 辅助：加载JPG并抠掉灰色背景
+Game::Game() = default;
+
+// 加载带透明色键的贴图。
+// 当前主要用于子弹图集：把纯白背景设为透明，再转换为 SDL_Texture。
 SDL_Texture* Game::LoadTextureWithColorKey(const char* filename) {
     SDL_Surface* surf = IMG_Load(filename);
     if (!surf) {
@@ -22,9 +39,7 @@ SDL_Texture* Game::LoadTextureWithColorKey(const char* filename) {
         return nullptr;
     }
 
-    // 尝试去除灰色背景 (RGB ~230)
-    // 根据你的截图，背景很白，试着设为 230-255 范围
-    // 这里取一个大概值，最好是去PS转PNG
+    // 只处理纯白 RGB(255,255,255)。如果素材背景不是纯白，应优先在素材中制作透明通道。
     Uint32 colorkey = SDL_MapRGB(surf->format, 255, 255, 255);
     SDL_SetColorKey(surf, SDL_TRUE, colorkey);
 
@@ -35,9 +50,11 @@ SDL_Texture* Game::LoadTextureWithColorKey(const char* filename) {
 
 bool Game::Init()
 {
+    // 初始化随机种子，P 点生成位置和横向漂移会使用 rand()。
     std::srand(static_cast<unsigned>(std::time(nullptr)));
 
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) return false;
+    // 初始化 SDL 子系统。视频用于窗口/渲染，音频用于 SDL_mixer。
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) return false;
 
     int imgFlags = IMG_INIT_PNG | IMG_INIT_JPG;
     if (!(IMG_Init(imgFlags) & imgFlags)) return false;
@@ -52,42 +69,40 @@ bool Game::Init()
  
 
     cur_Window = SDL_CreateWindow("Touhou STG - CyberSecurity",
-        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1920, 1080, SDL_WINDOW_SHOWN);
+        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, ScreenWidth, ScreenHeight, SDL_WINDOW_SHOWN);
     cur_Renderer = SDL_CreateRenderer(cur_Window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 
     if (!cur_Window || !cur_Renderer) return false;
 
-    // ★ 修复文件名加载
-    // 角色图
+    // 角色贴图：玩家使用背身图，Boss 使用正面图。
     tex_PlayerReimu = IMG_LoadTexture(cur_Renderer, "Reimu.png");
     tex_PlayerMarisa = IMG_LoadTexture(cur_Renderer, "Marisa.png");
     tex_Enemy_Reimu = IMG_LoadTexture(cur_Renderer, "Reimu_Enemy.png");
     tex_Enemy_Marisa = IMG_LoadTexture(cur_Renderer, "Marisa_Enemy.png");
 
-    // 子弹图 (带去色处理)
-    // 注意：文件名里有空格！！
+    // 子弹图集使用色键处理透明背景；P 点复用玩家子弹图集。
     tex_PlayerBullet = LoadTextureWithColorKey("PlayerBullet.png");
     tex_EnemyBullet = LoadTextureWithColorKey("EnemyBullet.png");
     tex_PowerUp = tex_PlayerBullet; // 复用
-	// 背景图
+    // 背景图：菜单/选择界面和战斗界面分别使用不同背景。
     tex_BackgroundMenu = IMG_LoadTexture(cur_Renderer, "TitleBg.png");
     tex_BackgroundBattle = IMG_LoadTexture(cur_Renderer, "BattleBg.png");
 
-	//字体加载
+    // 字体用于所有中文 UI 文本，路径相对于运行目录。
     font = TTF_OpenFont("assets\\fonts\\SimHei.ttf", 24);
     if (!font) std::cout << "Font load failed!" << std::endl;
 
-    //bgm加载
+    // 背景音乐使用 Mix_Music，适合循环播放。
     bgm_Menu = Mix_LoadMUS("assets\\audios\\Dream Battle.mp3");
     bgm_Battle = Mix_LoadMUS("assets\\audios\\Necro-Fantasy.mp3");
     if (!bgm_Menu) std::cout << "BGM Load Failed!" << std::endl;
 
-	//音效加载
+    // 短音效使用 Mix_Chunk。播放时统一通过 PlaySfx 做空指针保护。
     se_Shoot = Mix_LoadWAV("assets\\sfx\\player_shoot.wav");
 	se_EnemyShoot1 = Mix_LoadWAV("assets\\sfx\\enemy_shoot1.wav");
     se_EnemyShoot2 = Mix_LoadWAV("assets\\sfx\\enemy_shoot2.wav");
     se_Dead = Mix_LoadWAV("assets\\sfx\\playerdead.wav");
-    se_Victory = Mix_LoadWAV("assets\\sfx\\victory.mov");
+    se_Victory = Mix_LoadWAV("assets\\sfx\\victory.ogg");
 	se_PowerUp = Mix_LoadWAV("assets\\sfx\\power_up.wav");
     se_Select= Mix_LoadWAV("assets\\sfx\\select.wav");
     se_BeHitted = Mix_LoadWAV("assets\\sfx\\playerbehitted.wav");
@@ -97,49 +112,110 @@ bool Game::Init()
         std::cout << "SFX Load Failed!" << std::endl;
 	}
 
-	// 初始化游戏状态
+    // 初始化游戏状态和音量，并启动主菜单 BGM。
     is_Running = true;
     lastTime = SDL_GetTicks();
     CurrentState = State::MAIN_MENU;
     menuCursor = 0;
     Mix_VolumeMusic(bgmVolume);      // 同步背景音乐音量
     Mix_Volume(-1, sfxVolume);       // 同步所有音效频道的音量 (-1表示所有频道)
-    Mix_PlayMusic(bgm_Menu, -1);
+    if (bgm_Menu) Mix_PlayMusic(bgm_Menu, -1);
     return true;
+}
+
+void Game::ResetRunState()
+{
+    // 重置单局战斗相关状态。新开局和重新进入战斗时都应从干净状态开始。
+    currentPhaseIndex = 0;
+    shootTimer = 0.0f;
+    enemyShootTimer = 0.5f;
+    powerUpSpawnTimer = 1.0f + (rand() % 200) / 100.0f;
+    continueTimer = ContinueSeconds;
+    spellTimer = 0.0f;
+    isSpellActive = false;
+    spellUser = selectedCharID;
+    shakeTime = 0.0f;
+}
+
+void Game::ClearBattleObjects()
+{
+    // 释放当前战斗中的所有实体；unique_ptr 会在 clear/reset 时自动 delete。
+    player.reset();
+    Enemies.clear();
+    playerBullets.clear();
+    enemyBullets.clear();
+    powerUps.clear();
+}
+
+void Game::ClearEnemyBullets()
+{
+    // 阶段切换、Miss 消弹等场景只需要清理敌弹，不影响玩家子弹和道具。
+    enemyBullets.clear();
+}
+
+void Game::PlaySfx(Mix_Chunk* chunk)
+{
+    // 音效资源可能加载失败，集中判空能避免每个调用点重复检查。
+    if (chunk) {
+        Mix_PlayChannel(-1, chunk, 0);
+    }
+}
+
+void Game::DestroyTexture(SDL_Texture*& texture)
+{
+    // SDL_Texture 需要在销毁 renderer 前释放；释放后置空防止重复释放。
+    if (texture) {
+        SDL_DestroyTexture(texture);
+        texture = nullptr;
+    }
+}
+
+void Game::FreeChunk(Mix_Chunk*& chunk)
+{
+    // Mix_Chunk 是短音效资源，对应 Mix_LoadWAV。
+    if (chunk) {
+        Mix_FreeChunk(chunk);
+        chunk = nullptr;
+    }
+}
+
+void Game::FreeMusic(Mix_Music*& music)
+{
+    // Mix_Music 是长音乐资源，对应 Mix_LoadMUS。
+    if (music) {
+        Mix_FreeMusic(music);
+        music = nullptr;
+    }
 }
 
 void Game::InitBattle(CharacterID playerID)
 {
-    if (player) { delete player; player = nullptr; }
-    for (auto& e : Enemies) delete e;
-    Enemies.clear();
-    for (auto& b : playerBullets) delete b;
-    playerBullets.clear();
-    for (auto& b : enemyBullets) delete b;
-    enemyBullets.clear();
+    // 开始新战斗前先清理上一局遗留对象，避免子弹、P 点或 Boss 残留。
+    ClearBattleObjects();
+    selectedCharID = playerID;
 
-    // 根据选择创建 玩家(背身) 和 敌人(正面)
+    if (tex_PlayerReimu) SDL_SetTextureColorMod(tex_PlayerReimu, 255, 255, 255);
+    if (tex_PlayerMarisa) SDL_SetTextureColorMod(tex_PlayerMarisa, 255, 255, 255);
+
+    // 根据玩家选择创建玩家和对手 Boss：灵梦对魔理沙，魔理沙对灵梦。
     if (playerID == CharacterID::REIMU) {
-        // 玩家在下方 (960, 900)
-        player = new Player(960, 900, tex_PlayerReimu);
-        // Boss 在上方 (960, 200)
-        Enemies.push_back(new Enemy(960, 200, tex_Enemy_Marisa));
+        // 玩家出生在屏幕下方中央。
+        player = std::make_unique<Player>(960.0f, 900.0f, tex_PlayerReimu);
+        // Boss 出生在屏幕上方中央。
+        Enemies.push_back(std::make_unique<Enemy>(960.0f, 200.0f, tex_Enemy_Marisa));
     }
     else {
-        player = new Player(960, 900, tex_PlayerMarisa);
-        Enemies.push_back(new Enemy(960, 200, tex_Enemy_Reimu));
+        player = std::make_unique<Player>(960.0f, 900.0f, tex_PlayerMarisa);
+        Enemies.push_back(std::make_unique<Enemy>(960.0f, 200.0f, tex_Enemy_Reimu));
     }
 
     SetupDialogue(playerID);
     SetupEnemyPhases(playerID);
-    currentPhaseIndex = 0;
-    powerUpSpawnTimer = 1.0f + (rand() % 200) / 100.0f;
-    shootTimer = 0;
-    enemyShootTimer = 0.5f;
+    ResetRunState();
 }
 
-// ... 对话和阶段设置函数保持原样 ...
 void Game::SetupDialogue(CharacterID playerID) {
+    // 开场对话会进入 DIALOGUE 状态；玩家按 Z 读完后回到 PLAYING。
     DialoueQueue.clear();
     cur_index = 0;
     CurrentState = State::DIALOGUE;
@@ -147,22 +223,22 @@ void Game::SetupDialogue(CharacterID playerID) {
 
     if (playerID == CharacterID::REIMU)
     {
-        // 这里的中文我重新敲了一遍，防止有奇怪的不可见字符
         DialoueQueue.push_back({ "Reimu", "魔理沙，快停止这场 DDOS 攻击！", {255,100,100,255} });
         DialoueQueue.push_back({ "Marisa", "嘿嘿，我的僵尸网络可是无懈可击的，DAZE！", {255,255,100,255} });
     }
-    else if (playerID == CharacterID::MARISA) // 之前这里直接写 else 容易出歧义，加上具体判断
+    else if (playerID == CharacterID::MARISA)
     {
         DialoueQueue.push_back({ "Marisa", "灵梦！你的防火墙太脆弱了！", {255,255,100,255} });
         DialoueQueue.push_back({ "Reimu", "那就由我来给你打个补丁吧！", {255,100,100,255} });
     }
 }
-// 1. 设置敌人的阶段 (必须把阶段2加进去，不然永远不出手里剑！)
+// 配置 Boss 血量阶段。阶段触发后会进入剧情对话，并在 CheckEnemyPhase 中清空敌弹。
 void Game::SetupEnemyPhases(CharacterID playerID) {
     enemyPhases.clear();
     std::string bossName = (playerID == CharacterID::REIMU) ? "Marisa" : "Reimu";
     std::string SystemName = (playerID == CharacterID::MARISA) ? "Marisa" : "Reimu";
-    // --- 阶段 1 ---
+
+    // 阶段 1：血量降到 4000 以下，切换为锁链弹幕。
     EnemyPhase p1;
     p1.hpThreshold = 4000;
     p1.dialogueTriggered = false;
@@ -170,7 +246,7 @@ void Game::SetupEnemyPhases(CharacterID playerID) {
     p1.dialogues.push_back({ bossName, "部署加密锁，把你的数据都锁死吧！", {255,50,50,255} });
     enemyPhases.push_back(p1);
 
-    // --- 阶段 2 ---
+    // 阶段 2：血量降到 2000 以下，切换为高速手里剑弹幕。
     EnemyPhase p2;
     p2.hpThreshold = 2000;
     p2.dialogueTriggered = false;
@@ -178,50 +254,37 @@ void Game::SetupEnemyPhases(CharacterID playerID) {
     p2.dialogues.push_back({ bossName, "格式化所有分区！全！部！删！除！", {255,0,0,255} });
     enemyPhases.push_back(p2);
 }
-// 2. 检查阶段切换 (顺便清空子弹)
+
+// 检查 Boss 是否进入下一个血量阶段；触发阶段时暂停战斗并清屏敌弹。
 void Game::CheckEnemyPhase() {
     if (Enemies.empty()) return;
     float hp = Enemies[0]->GetBlood();
 
-    // 遍历所有阶段配置
+    // 从 currentPhaseIndex 开始检查，避免已触发阶段被重复处理。
     for (int i = currentPhaseIndex; i < enemyPhases.size(); ++i) {
-        // 如果血量低于阈值，且该阶段对话还没触发过
         if (hp <= enemyPhases[i].hpThreshold && !enemyPhases[i].dialogueTriggered) {
 
-            // 更新当前阶段索引
-            currentPhaseIndex = i + 1; // 0是初始, 触发p1变成阶段1, 触发p2变成阶段2
-            // 注意：这里的 currentPhaseIndex 对应 Update 里的逻辑判断
-            // 如果你的 Update 里写的是 if(currentPhaseIndex == 1) 发金锁，那这里要对上
-            // 修正逻辑：建议直接用 i+1 或者专门的状态变量，这里假设 Update 里是用 0, 1, 2 区分的
+            // currentPhaseIndex 与 Boss AI 分支对应：0 初始，1 锁链阶段，2 暴走阶段。
+            currentPhaseIndex = i + 1;
 
-            // 标记对话已触发
             enemyPhases[i].dialogueTriggered = true;
 
-            // 加载对话内容
+            // 阶段对话结束后会恢复到触发前的游戏状态。
             DialoueQueue = enemyPhases[i].dialogues;
             cur_index = 0;
-
-            // 记录之前的状态并进入对话
             stateBeforeDialogue = CurrentState;
             CurrentState = State::DIALOGUE;
 
-            // ★★★ 核心修复：清空所有敌方子弹 (消弹) ★★★
-            for (auto b : enemyBullets) {
-                delete b; // 释放内存
-            }
-            enemyBullets.clear(); // 清空容器
+            // 阶段切换时消除旧弹幕，避免玩家在对话结束后立即被残留敌弹命中。
+            ClearEnemyBullets();
 
             std::cout << "Phase Triggered! Bullets Cleared." << std::endl;
             break;
         }
     }
 }
-// Game.cpp
 
-
-// ... 其他头文件 ...
-
-// ★★★ 链接器报错就是因为找不到下面这个函数！ ★★★
+// 主循环根据 SDL_GetTicks 计算 deltaTime，并限制最大步长，避免卡顿后逻辑跳跃。
 void Game::Run()
 {
     while (is_Running) {
@@ -236,7 +299,7 @@ void Game::Run()
     }
 }
 
-// ... 以及其他的函数实现 ...
+// 这里只处理 SDL 窗口事件；按键输入在 Update 中按当前状态读取。
 void Game::HandleEvents()
 {
     SDL_Event event;
@@ -258,22 +321,22 @@ void Game::Update(float DeltaTime)
         if (!keyLock) {
             if (key[SDL_SCANCODE_UP]) {
                 if (menuSelect > 0) menuSelect--;
-                if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
+                PlaySfx(se_Select);
                 keyLock = true;
             }
             if (key[SDL_SCANCODE_DOWN]) {
-				if (menuSelect < 2) menuSelect++; // 目前只有3个按钮：开始 音量 退出  后续可以根据主菜单功能加更多
-                if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
+                if (menuSelect < 2) menuSelect++; // 主菜单共有 3 个选项：开始、音量、退出。
+                PlaySfx(se_Select);
                 keyLock = true;
             }
             if (key[SDL_SCANCODE_Z]) {
                 if (menuSelect == 0) {
                     CurrentState = State::SELECT_CHARACTER;
-                    if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
+                    PlaySfx(se_Select);
                 }
                 else if (menuSelect == 1) {
                     CurrentState = State::VOLUME_SETTINGS;
-                    if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
+                    PlaySfx(se_Select);
                 }
                 else if (menuSelect == 2) is_Running = false;
                 keyLock = true;
@@ -294,12 +357,12 @@ void Game::Update(float DeltaTime)
             // 1. 上下键选择调节对象
             if (key[SDL_SCANCODE_UP]) {
                 if (volMenuSelect > 0) volMenuSelect--;
-                if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
+                PlaySfx(se_Select);
                 keyLock = true;
             }
             else if (key[SDL_SCANCODE_DOWN]) {
                 if (volMenuSelect < 2) volMenuSelect++;
-                if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
+                PlaySfx(se_Select);
                 keyLock = true;
             }
 
@@ -308,13 +371,13 @@ void Game::Update(float DeltaTime)
                 if (key[SDL_SCANCODE_LEFT] && bgmVolume > 0) {
                     bgmVolume -= 4;
                     Mix_VolumeMusic(bgmVolume);
-                    if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
+                    PlaySfx(se_Select);
                     keyLock = true;
                 }
-                if (key[SDL_SCANCODE_RIGHT] && bgmVolume < 64) {
+                if (key[SDL_SCANCODE_RIGHT] && bgmVolume < MaxVolume) {
                     bgmVolume += 4;
                     Mix_VolumeMusic(bgmVolume);
-                    if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
+                    PlaySfx(se_Select);
                     keyLock = true;
                 }
             }
@@ -323,13 +386,13 @@ void Game::Update(float DeltaTime)
                     sfxVolume -= 4;
                     // Mix_Volume(-1, vol) 调节所有音效频道
                     Mix_Volume(-1, sfxVolume);
-                    if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
+                    PlaySfx(se_Select);
                     keyLock = true;
                 }
-                if (key[SDL_SCANCODE_RIGHT] && sfxVolume < 128) {
+                if (key[SDL_SCANCODE_RIGHT] && sfxVolume < MaxVolume) {
                     sfxVolume += 4;
                     Mix_Volume(-1, sfxVolume);
-                    if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
+                    PlaySfx(se_Select);
                     keyLock = true;
                 }
             }
@@ -337,7 +400,7 @@ void Game::Update(float DeltaTime)
             // 3. 确认返回
             if (key[SDL_SCANCODE_Z] || key[SDL_SCANCODE_ESCAPE]) {
                 if (volMenuSelect == 2 || key[SDL_SCANCODE_ESCAPE]) {
-                    if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
+                    PlaySfx(se_Select);
                     CurrentState = State::MAIN_MENU;
                 }
                 keyLock = true;
@@ -359,15 +422,15 @@ void Game::Update(float DeltaTime)
         if (!keyLock) {
             if (key[SDL_SCANCODE_LEFT]) {
                 menuCursor = 0;
-                if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
+                PlaySfx(se_Select);
             }
             if (key[SDL_SCANCODE_RIGHT]) {
                 menuCursor = 1;
-                if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
+                PlaySfx(se_Select);
             }
-			if (key[SDL_SCANCODE_ESCAPE]) CurrentState = State::MAIN_MENU;
+            if (key[SDL_SCANCODE_ESCAPE]) CurrentState = State::MAIN_MENU;
             if (key[SDL_SCANCODE_Z]) {
-                if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
+                PlaySfx(se_Select);
                 selectedCharID = (menuCursor == 0) ? CharacterID::REIMU : CharacterID::MARISA;
                 InitBattle(selectedCharID);
                 Mix_FadeOutMusic(500); // 500ms 内淡出
@@ -386,7 +449,7 @@ void Game::Update(float DeltaTime)
         static bool zPressed = false;
         if (key[SDL_SCANCODE_Z] && !zPressed) {
             cur_index++;
-            if (se_Select) Mix_PlayChannel(-1, se_Select, 0);
+            PlaySfx(se_Select);
             if (cur_index >= DialoueQueue.size()) CurrentState = stateBeforeDialogue;
             zPressed = true;
         }
@@ -398,62 +461,55 @@ void Game::Update(float DeltaTime)
     {
         if (player) player->Update(DeltaTime);
 
-        // 玩家射击
+        // 玩家射击：按住 Z 时按冷却间隔连续发弹，火力等级会增加侧向子弹。
         if (key[SDL_SCANCODE_Z] && shootTimer <= 0.0f) {
-            Mix_PlayChannel(-1, se_Shoot, 0);
+            PlaySfx(se_Shoot);
             BulletType bType = (selectedCharID == CharacterID::REIMU) ? BulletType::PLAYER_TALISMAN : BulletType::PLAYER_STAR;
-            // 简单实现：根据Level增加子弹
-            playerBullets.push_back(new Bullet(player->Position.x, player->Position.y, 0, -600, bType));
-            if (player->powerLevel >= 1) {
-                playerBullets.push_back(new Bullet(player->Position.x - 15, player->Position.y, -100, -600, bType));
-                playerBullets.push_back(new Bullet(player->Position.x + 15, player->Position.y, 100, -600, bType));
+            const Vector2D& playerPosition = player->GetPosition();
+            playerBullets.push_back(std::make_unique<Bullet>(playerPosition.x, playerPosition.y, 0.0f, -600.0f, bType));
+            if (player->GetPowerLevel() >= 1) {
+                playerBullets.push_back(std::make_unique<Bullet>(playerPosition.x - 15.0f, playerPosition.y, -100.0f, -600.0f, bType));
+                playerBullets.push_back(std::make_unique<Bullet>(playerPosition.x + 15.0f, playerPosition.y, 100.0f, -600.0f, bType));
             }
             shootTimer = 0.07f;
         }
         shootTimer -= DeltaTime;
 
-        // 生成P点
+        // 生成 P 点：每隔一段随机时间从屏幕上方掉落一批火力道具。
         powerUpSpawnTimer -= DeltaTime;
         if (powerUpSpawnTimer <= 0) {
-            // 1. 随机决定这次掉落几个 P 点 (比如 3 到 6 个)
-            //    rand() % 4 会生成 0~3，加上 3 就是 3~6
+            // 每批生成 3 到 6 个 P 点。
             int batchCount = 3 + rand() % 4;
 
-            // 2. 决定这一批掉落的“中心位置” X 坐标
-            //    原来的 50 + rand() % 540 太窄了，我给你扩大到全屏范围 (200 ~ 1720)
-            //    避免生成在太靠边的地方捡不到
+            // 批次中心限制在 200 到 1719，避免道具过于靠近屏幕边缘。
             float batchCenterX = 200.0f + rand() % 1520;
 
-            // 3. 循环生成
             for (int i = 0; i < batchCount; i++) {
 
-                // 给每个 P 点一点细微的位置偏移，防止它们完全重叠在一起显得很假
+                // 给同批 P 点少量偏移，避免生成位置完全重叠。
                 float offsetX = (float)(rand() % 60 - 30); // -30 到 30 的偏移
                 float offsetY = (float)(rand() % 60 - 30); // -30 到 30 的偏移
 
-                // 生成！初始 Y 设为 -50 (屏幕上方外面一点点)
-                // 注意：PowerUp 的构造函数里已经写了随机的 Velocity.x，
-                // 所以它们生成后会自动向左右散开，不用在这里写散开逻辑，很省事喵！
-                powerUps.push_back(new PowerUp(batchCenterX + offsetX, -50.0f + offsetY, tex_PowerUp));
+                // 初始 Y 在屏幕上方，PowerUp 构造函数会设置上抛和横向漂移。
+                powerUps.push_back(std::make_unique<PowerUp>(batchCenterX + offsetX, -50.0f + offsetY, tex_PowerUp));
             }
 
-            // 4. 重置计时器 (加入一点随机性，让节奏感更自然)
-            //    现在每隔 4.0 到 6.0 秒掉落一批
+            // 下一批掉落间隔为 4.0 到 5.9 秒。
             powerUpSpawnTimer = 4.0f + (rand() % 20) / 10.0f;
         }
-        // --- [新增：BOOM 触发器] ---
+
+        // 处理 Bomb/符卡触发。xPressed 防止长按 X 时重复消耗 Bomb。
         static bool xPressed = false;
-        if (key[SDL_SCANCODE_X] && !xPressed && player->bombs > 0 && !isSpellActive) {
-            player->bombs--;
+        if (key[SDL_SCANCODE_X] && !xPressed && player->CanUseBomb() && !isSpellActive) {
+            player->ConsumeBomb();
             isSpellActive = true;
             spellTimer = 3.0f; // 符卡持续3秒
             spellUser = selectedCharID;
 
-            player->isInvincible = true;
-            player->invincTimer = 3.5f; // 无敌略长于符卡
+            player->SetInvincible(3.5f); // 无敌略长于符卡
 
-            if (se_REIMUBomb && spellUser == CharacterID::REIMU) Mix_PlayChannel(-1, se_REIMUBomb, 0);
-            if(se_REIMUBomb && spellUser == CharacterID::MARISA) Mix_PlayChannel(-1, se_MARISABomb, 0);
+            if (se_REIMUBomb && spellUser == CharacterID::REIMU) PlaySfx(se_REIMUBomb);
+            if (se_MARISABomb && spellUser == CharacterID::MARISA) PlaySfx(se_MARISABomb);
             xPressed = true;
         }
         if (!key[SDL_SCANCODE_X]) xPressed = false;
@@ -463,113 +519,100 @@ void Game::Update(float DeltaTime)
             spellTimer -= DeltaTime;
 
             // 持续消弹：符卡期间任何接触到特效区域的子弹都会消失
-            for (auto b : enemyBullets) {
+            for (auto& b : enemyBullets) {
                 if (spellUser == CharacterID::MARISA) {
                     // 魔理沙：激光范围内的子弹消失
-                    if (abs(b->Position.x - player->Position.x) < 100) b->active = false;
+                    if (abs(b->GetPosition().x - player->GetPosition().x) < 100) b->Deactivate();
                 }
                 else {
                     // 灵梦：全屏缓慢消弹
-                    b->active = false;
+                    b->Deactivate();
                 }
             }
 
             // 持续伤害
-            for (auto e : Enemies) {
-                if (e->active) e->hit(10); // 每帧造成小额伤害，累计很高
+            for (auto& e : Enemies) {
+                if (e->IsActive()) e->hit(10); // 每帧造成小额伤害，累计很高
             }
 
             if (spellTimer <= 0) isSpellActive = false;
         }
 
-        // Boss逻辑
-        // Game.cpp -> Update 函数内部 -> Boss逻辑部分
-
-        // ==========================================================
-        // ★★★ Boss AI 核心逻辑 (State Machine) ★★★
-        // ==========================================================
+        // Boss 弹幕 AI：根据 currentPhaseIndex 选择攻击模式。
         enemyShootTimer -= DeltaTime;
         static float angleOffset = 0; // 用于让弹幕旋转起来
         static float enemySeCooldown = 0.0f;
         enemySeCooldown -= DeltaTime;
        
-        if (!Enemies.empty() && Enemies[0]->active) {
+        if (!Enemies.empty() && Enemies[0]->IsActive()) {
             if (enemyShootTimer <= 0) {
-                // 根据 currentPhaseIndex 决定攻击方式
-                // 0: 初始阶段, 1: 警告阶段, 2: 暴走阶段 (你可以自己去 SetupEnemyPhases 里加更多阶段)
+                // currentPhaseIndex：0 初始圆环弹，1 锁链追踪弹，2 低血量高速螺旋弹。
                 if (enemySeCooldown <= 0) {
                     if (currentPhaseIndex >= 2 || Enemies[0]->GetBlood() < 2000) {
                         // 播放阶段 2 专属的高频/暴走音效
-                        if (se_EnemyShoot2) Mix_PlayChannel(-1, se_EnemyShoot2, 0);
+                        PlaySfx(se_EnemyShoot2);
                         enemySeCooldown = 0.06f; // 阶段 2 射速极快，冷却缩短以配合节奏
                     }
                     else {
                         // 播放阶段 0 和 1 的常规攻击音效
-                        if (se_EnemyShoot1) Mix_PlayChannel(-1, se_EnemyShoot1, 0);
+                        PlaySfx(se_EnemyShoot1);
                         enemySeCooldown = 0.12f; // 普通阶段冷却稍长，听感更清晰
                     }
                 }
-                // ★阶段 0: 基础弹幕 (绿球)
-                if (currentPhaseIndex == 0) {
 
-                    // 发射 36 发子弹 (密度提升)，类型为 VIRUS
-                    bp.ShootRotatingRing(Enemies[0]->Position.x, Enemies[0]->Position.y, 300, 36, angleOffset, enemyBullets, BulletType::VIRUS);
+                // 阶段 0：病毒圆环弹，0.5 秒一波。
+                if (currentPhaseIndex == 0) {
+                    const Vector2D& enemyPosition = Enemies[0]->GetPosition();
+                    bp.ShootRotatingRing(enemyPosition.x, enemyPosition.y, 300, 36, angleOffset, enemyBullets, BulletType::VIRUS);
 
                     angleOffset += 0.1f; // 缓慢旋转
-                    enemyShootTimer = 0.5f; // ★射速提升：每0.2秒发一波 (原来是0.5)
+                    enemyShootTimer = 0.5f;
 
                 }
-                // ★阶段 1: 追踪陷阱 (金锁)
+                // 阶段 1：锁链弹先展开再瞄准玩家，间隔较长。
                 else if (currentPhaseIndex == 1) {
-
-                    // 发射 24 发“停顿-追踪”弹，类型为 LOCK
-                    // 这种子弹生成后会停一下，然后飞向玩家
-                    bp.ShootStopAndGo(Enemies[0]->Position.x, Enemies[0]->Position.y, 1.0f, 600, player, 24, enemyBullets, BulletType::LOCK);
+                    const Vector2D& enemyPosition = Enemies[0]->GetPosition();
+                    bp.ShootStopAndGo(enemyPosition.x, enemyPosition.y, 1.0f, 600, player.get(), 24, enemyBullets, BulletType::LOCK);
 
                     angleOffset -= 0.15f; // 反向旋转
                     enemyShootTimer = 0.8f; // 这种强力弹幕间隔长一点
 
                 }
-                // ★阶段 2: 终极暴走 (紫色手里剑) - 假设你在 SetupEnemyPhases 里加了这个阶段
-                // 或者如果血量很低强制进入
+                // 阶段 2：高速手里剑螺旋弹，0.05 秒一轮。
                 else if (currentPhaseIndex >= 2 || Enemies[0]->GetBlood() < 2000) {
-
-                // 疯狂螺旋！一次喷射 5 发，像机关枪一样扫射
-                // 这里的 angleOffset 每次 update 都在狂变
                     angleOffset += 0.5f;
 
-                // 使用新写的 ShootSpiral
-                    bp.ShootSpiral(Enemies[0]->Position.x, Enemies[0]->Position.y, 500, angleOffset, 5, 0.2f, enemyBullets, BulletType::SHURIKEN);
+                    const Vector2D& enemyPosition = Enemies[0]->GetPosition();
+                    bp.ShootSpiral(enemyPosition.x, enemyPosition.y, 500, angleOffset, 5, 0.2f, enemyBullets, BulletType::SHURIKEN);
 
-                    enemyShootTimer = 0.05f; // ★极速：每 0.05秒 发射一次！
+                    enemyShootTimer = 0.05f;
                 }
             }
         }
 
         // 更新所有对象
-        for (auto b : playerBullets) b->Update(DeltaTime);
-        for (auto b : enemyBullets) b->Update(DeltaTime);
-        for (auto p : powerUps) p->Update(DeltaTime);
+        for (auto& b : playerBullets) b->Update(DeltaTime);
+        for (auto& b : enemyBullets) b->Update(DeltaTime);
+        for (auto& p : powerUps) p->Update(DeltaTime);
 
         // 碰撞：子弹打Boss
-        for (auto b : playerBullets) {
-            if (!b->active) continue;
-            for (auto e : Enemies) {
-                if (e->active && b->CheckCollision(e)) {
-                    e->hit(player->attack_point);
-                    //if (se_Hit) Mix_PlayChannel(-1, se_Hit, 0); // 敌人受击声
-                    b->active = false;
+        for (auto& b : playerBullets) {
+            if (!b->IsActive()) continue;
+            for (auto& e : Enemies) {
+                if (e->IsActive() && b->CheckCollision(e.get())) {
+                    e->hit(player->GetAttackPoint());
+                    b->Deactivate();
                 }
             }
         }
 
         // 碰撞：子弹打玩家 (已适配东方残机与无敌机制)
-        for (auto b : enemyBullets) {
+        for (auto& b : enemyBullets) {
             // 只有在子弹激活、玩家存在，且玩家当前【不在】无敌状态时才检测碰撞
-            if (b->active && player && !player->isInvincible && player->CheckCollision(b)) {
+            if (b->IsActive() && player && !player->IsInvincible() && player->CheckCollision(b.get())) {
 
-                b->active = false;      // 销毁击中玩家的子弹
-                player->lives--;        // 减少一个残机 (原作机制：Miss)
+                b->Deactivate();      // 销毁击中玩家的子弹
+                player->hit(1.0f);    // 减少一个残机 (原作机制：Miss)
   
 
                 if (player->Dead_judge()) {
@@ -578,65 +621,56 @@ void Game::Update(float DeltaTime)
                     spellTimer = 0.0f;
                     shakeTime = 0.0f;
                     Mix_HaltMusic();    // 停止背景音乐
-                    if (se_Dead) Mix_PlayChannel(-1, se_Dead, 0);
+                    continueTimer = ContinueSeconds;
+                    PlaySfx(se_Dead);
                     CurrentState = State::GAME_OVER;
                 }
                 else {
-                    if (se_BeHitted) Mix_PlayChannel(-1, se_BeHitted, 0);
-                    /// ★★★ 核心修改：被击中后全屏消弹 ★★★
-                    // 东方原作中，Miss 后屏幕上的子弹会全部消失
-                    for (auto eb : enemyBullets) {
-                        eb->active = false;
+                    PlaySfx(se_BeHitted);
+                    // Miss 后清空敌弹，给玩家复位后的无敌时间一个稳定起点。
+                    for (auto& eb : enemyBullets) {
+                        eb->Deactivate();
                     }
                     player->ResetPosition();
-
-                    // 可选：清除当前屏幕上的所有敌方子弹 (原作中被击中通常会消弹)
-                    // for (auto eb : enemyBullets) eb->active = false;
                 }
             }
         }
 
-        // 碰撞：吃P点
-        for (auto p : powerUps) {
+        // 碰撞：拾取 P 点。
+        for (auto& p : powerUps) {
 
-            // 原来的写法（太严苛了，注释掉）：
-            // if (p->active && player && player->CheckCollision(p)) {
-
-            // ★★★ 新的写法：AABB 矩形碰撞检测 ★★★
-            // 只要 P点 进入这个范围，就算吃到
-            // 既然要“角色边缘”，我们就给一个比判定点大得多的宽和高
-
-            // 1. 定义捡东西的判定范围 (这里设为宽60, 高80，大约是角色贴图的大小)
-            // 数值越大，捡东西越容易，你可以自己调
+            // 使用矩形拾取范围，而不是玩家真实判定点；这样贴图边缘接触也能拾取。
             float pickUpWidth = 60.0f;
             float pickUpHeight = 80.0f;
 
-            // 2. 计算玩家和P点的距离 (绝对值)
-            // std::abs 需要 #include <cmath> 或 <algorithm>
-            float diffX = std::abs(player->Position.x - p->Position.x);
-            float diffY = std::abs(player->Position.y - p->Position.y);
+            if (!p->IsActive() || !player) continue;
 
-            // 3. 矩形碰撞公式：如果 X轴距离 < (玩家宽/2 + 道具宽/2) 且 Y轴距离 < (玩家高/2 + 道具高/2)
-            // 这里我们简化一下，直接判断是否在 pickUp 范围内
+            float diffX = std::abs(player->GetPosition().x - p->GetPosition().x);
+            float diffY = std::abs(player->GetPosition().y - p->GetPosition().y);
+
+            // 只检查玩家中心与 P 点中心的距离是否落在拾取矩形内。
             bool isColliding = (diffX < pickUpWidth / 2) && (diffY < pickUpHeight / 2);
 
        
-            if (p->active && player && player->CheckCollision(p)) {
+            if (p->IsActive() && player && isColliding) {
                 if (player->CollectPowerUp()==1) {
-                    if (se_PowerUp) Mix_PlayChannel(-1, se_PowerUp, 0);
+                    PlaySfx(se_PowerUp);
                 }
-                p->active = false;
+                p->Deactivate();
             }
         }
 
         // 清理失效对象
-        // (略去繁琐的 remove_if 代码，保持整洁，实际运行时建议加上)
-        // ... CheckEnemyPhase() ...
+        RemoveInactiveObjects(playerBullets);
+        RemoveInactiveObjects(enemyBullets);
+        RemoveInactiveObjects(powerUps);
+
+        // 对象清理后再检查阶段，避免阶段切换对话中残留已失效实体。
         CheckEnemyPhase();
 
         // 胜利判定
         if (!Enemies.empty() && Enemies[0]->GetBlood() <= 0) {
-            if (se_Victory) Mix_PlayChannel(-1, se_Victory, 0); // 胜利音效
+            PlaySfx(se_Victory); // 胜利音效
             Mix_HaltMusic(); // 停止战斗BGM
             CurrentState = State::VICTORY;
             isSpellActive = false;
@@ -656,6 +690,8 @@ void Game::Update(float DeltaTime)
             if (!escPressed) {
                 CurrentState = State::MAIN_MENU;
                 menuSelect = 0;
+                continueTimer = ContinueSeconds;
+                ClearBattleObjects();
                 if (bgm_Menu) {
                     Mix_HaltMusic();
                     Mix_PlayMusic(bgm_Menu, -1);
@@ -677,21 +713,19 @@ void Game::Update(float DeltaTime)
                     Mix_HaltMusic();
                     Mix_PlayMusic(bgm_Menu, -1);
                 }
-                continueTimer = 10.0f; // 重置计时器供下次使用
+                continueTimer = ContinueSeconds; // 重置计时器供下次使用
+                ClearBattleObjects();
                 break;
             }
             // --- 2. 续关 (按 R) ---
             if (key[SDL_SCANCODE_R]) {
                 if (!rPressed) {
-                    // --- 东方传统续关重置 ---
-                    player->lives = 3;           // 恢复残机
-                    player->powerLevel = 0;      // 续关惩罚：火力清零或降级
-                    player->powerValue = 0;
-                    //player->grazeCount = 0;      // 擦弹清零
-                    player->ResetPosition();     // 移动到初始点并开启3秒无敌/闪烁
+                    // 续关重置：恢复残机，但清空火力作为惩罚。
+                    player->ResetForContinue();  // 恢复残机、清空火力并回到初始点。
+                    continueTimer = ContinueSeconds;
 
                     // 清理屏幕弹幕，给玩家喘息机会
-                    for (auto b : enemyBullets) b->active = false;
+                    for (auto& b : enemyBullets) b->Deactivate();
 
                     // 恢复战斗音乐
                     if (bgm_Battle) {
@@ -727,7 +761,7 @@ void Game::Render()
             SDL_RenderCopy(cur_Renderer, tex_BackgroundMenu, NULL, &bgRect);
         }
     }
-    // B. 如果在 战斗 / 对话 / 结算 界面，画战斗背景
+    // 战斗、对话、结算界面使用战斗背景。
     else
     {
         if (tex_BackgroundBattle) {
@@ -907,19 +941,19 @@ void Game::Render()
         }
     }
     // ============================================================
-    // 状态 B: 游戏进行中 OR 对话中 (包含时停逻辑)
+    // 状态 B: 游戏进行中或对话中（包含时停逻辑）
     // ============================================================
     else if (CurrentState == State::PLAYING || CurrentState == State::DIALOGUE) {
 
         // 1. 绘制游戏层
         if (player) player->Render(cur_Renderer);
-        for (auto e : Enemies) e->Render(cur_Renderer);
+        for (auto& e : Enemies) e->Render(cur_Renderer);
         // 子弹
-        for (auto b : playerBullets) if (b->active) b->Render(cur_Renderer, tex_PlayerBullet);
-        for (auto b : enemyBullets) if (b->active) b->Render(cur_Renderer, tex_EnemyBullet);
+        for (auto& b : playerBullets) if (b->IsActive()) b->Render(cur_Renderer, tex_PlayerBullet);
+        for (auto& b : enemyBullets) if (b->IsActive()) b->Render(cur_Renderer, tex_EnemyBullet);
         // 道具
-        for (auto p : powerUps) if (p->active) p->Render(cur_Renderer);
-        //bomb
+        for (auto& p : powerUps) if (p->IsActive()) p->Render(cur_Renderer);
+        // 符卡演出层。
         if (isSpellActive) {
             // --- [1. 背景变暗] ---
             SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_BLEND);
@@ -933,28 +967,30 @@ void Game::Render()
                 // 绘制 8 个巨大的彩色光玉环绕
                 for (int i = 0; i < 8; i++) {
                     float angle = (spellTimer * 4.0f) + (i * 0.785f);
-                    int dist = 300 - (spellTimer * 50); // 逐渐向中心收缩
-                    int tx = player->Position.x + cos(angle) * dist;
-                    int ty = player->Position.y + sin(angle) * dist;
+                    float dist = 300.0f - (spellTimer * 50.0f); // 逐渐向中心收缩
+                    const Vector2D& playerPosition = player->GetPosition();
+                    int tx = static_cast<int>(playerPosition.x + std::cos(angle) * dist);
+                    int ty = static_cast<int>(playerPosition.y + std::sin(angle) * dist);
 
                     SDL_SetRenderDrawColor(cur_Renderer, 255, 100, 200, 180);
                     SDL_Rect orb = { tx - 60, ty - 60, 120, 120 };
-                    SDL_RenderFillRect(cur_Renderer, &orb); // 建议换成带光晕的 png
+                    SDL_RenderFillRect(cur_Renderer, &orb); // 当前用矩形占位表现光玉效果。
                 }
             }
             else if (spellUser == CharacterID::MARISA) {
                 // 魔理沙：恋符「Master Spark」
                 SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_ADD); // 加法混合，超亮！
                 int offsetX = (shakeTime > 0) ? (rand() % 10 - 5) : 0;
+                const Vector2D& playerPosition = player->GetPosition();
 
                 // 激光外壳
                 SDL_SetRenderDrawColor(cur_Renderer, 100, 100, 255, 200);
-                SDL_Rect beamAura = { (int)player->Position.x - 120 + offsetX, 0, 240, (int)player->Position.y };
+                SDL_Rect beamAura = { (int)playerPosition.x - 120 + offsetX, 0, 240, (int)playerPosition.y };
                 SDL_RenderFillRect(cur_Renderer, &beamAura);
 
                 // 激光核心
                 SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 255, 255);
-                SDL_Rect beamCore = { (int)player->Position.x - 70 + offsetX, 0, 140, (int)player->Position.y };
+                SDL_Rect beamCore = { (int)playerPosition.x - 70 + offsetX, 0, 140, (int)playerPosition.y };
                 SDL_RenderFillRect(cur_Renderer, &beamCore);
                 SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_BLEND);
             }
@@ -977,12 +1013,12 @@ void Game::Render()
             int uiY = 100;           // UI 起始 Y 坐标
 
             // --- [1. 构建残机显示字符串] ---
-            // 东方风格：Player [ ★ ★ ★ ]
+            // 用星形符号直观显示剩余残机。
             std::string lifeStr = "Player: ";
-            for (int i = 0; i < player->lives; i++) {
+            for (int i = 0; i < player->GetLives(); i++) {
                 lifeStr += "★ ";
             }
-            if (player->lives <= 0) lifeStr += "None"; // 0残机时的提示
+            if (player->GetLives() <= 0) lifeStr += "None"; // 0残机时的提示
 
             // --- [2. 渲染残机文字] ---
             SDL_Color pink = { 255, 105, 180, 255 }; // 东方 UI 常用粉红色或纯白色
@@ -1000,8 +1036,8 @@ void Game::Render()
             // --- [3. 渲染 Power 数值] ---
             // 东方风格：Power [ 1.00 / 3.00 ]
             char powerBuf[64];
-            float totalPower = (float)player->powerLevel + player->powerValue;
-            sprintf_s(powerBuf, "Power:  %.2f / 3.00", totalPower);
+            float totalPower = player->GetTotalPower();
+            sprintf_s(powerBuf, "Power:  %.2f / %.2f", totalPower, static_cast<float>(MaxPowerLevel));
 
             SDL_Surface* sPower = TTF_RenderUTF8_Blended(font, powerBuf, { 255, 255, 255, 255 });
             if (sPower) {
@@ -1015,8 +1051,8 @@ void Game::Render()
             }
             // --- [4. 渲染 Spell Card 数值] ---
             std::string bombStr = "Spell:  ";
-            for (int i = 0; i < player->bombs; i++) {
-                bombStr += "★ "; // 或者用特定的图标
+            for (int i = 0; i < player->GetBombs(); i++) {
+                bombStr += "★ "; // 用星形符号显示可用符卡数量。
             }
             SDL_Surface* sBomb = TTF_RenderUTF8_Blended(font, bombStr.c_str(), { 100, 255, 100, 255 }); // 绿色
             if (sBomb) {
@@ -1028,8 +1064,8 @@ void Game::Render()
             }
         }
         // 3. 绘制 Boss 血条 (顶部居中长条)
-        if (!Enemies.empty() && Enemies[0]->active) {
-            Enemy* boss = Enemies[0];
+        if (!Enemies.empty() && Enemies[0]->IsActive()) {
+            Enemy* boss = Enemies[0].get();
 
             // --- [参数定义] ---
             int screenW = 1900;
@@ -1038,11 +1074,9 @@ void Game::Render()
             int uiX = (screenW - barW) / 2; // 水平居中
             int uiY = 10;            // 距离顶部 10 像素
 
-            // 假设 Boss 的最大血量可以通过逻辑推断或在 Enemy 类中定义
-            // 这里根据你的 SetupEnemyPhases 逻辑，假设初始血量较高（例如 6000）
-            // 如果 Enemy 类有 GetMaxBlood() 最好，如果没有，这里先设为一个基准值
+            // 当前 Boss 初始血量固定为 6000，血条按该值归一化。
             float currentHp = boss->GetBlood();
-            static float maxHp = 6000.0f; // 建议在 Enemy 类初始化时记录这个值
+            static float maxHp = 6000.0f; // 与 Enemy 构造函数中的初始血量保持一致。
 
             float hpPercent = currentHp / maxHp;
             if (hpPercent < 0) hpPercent = 0;
@@ -1072,7 +1106,7 @@ void Game::Render()
             SDL_RenderDrawLine(cur_Renderer, p1X, uiY, p1X, uiY + barH);
             SDL_RenderDrawLine(cur_Renderer, p2X, uiY, p2X, uiY + barH);
         }
-        // 3. ★★★ 时停遮罩与对话框逻辑 (别再漏掉了！) ★★★
+        // 对话状态下绘制半透明遮罩和对话框，战斗逻辑暂停在 DIALOGUE 状态。
         if (CurrentState == State::DIALOGUE && cur_index < DialoueQueue.size()) {
 
             // --- [时停黑纱] ---
@@ -1147,7 +1181,7 @@ void Game::Render()
                 SDL_FreeSurface(surf); SDL_DestroyTexture(t);
             }
 
-            // --- 3. [新增] 绘制倒计时数字 (仅在 GAME_OVER 时) ---
+            // --- 3. 绘制倒计时数字（仅 GAME_OVER 状态） ---
             if (CurrentState == State::GAME_OVER) {
                 char countBuf[64];
                 // 使用 ceil 向上取整，让玩家看到从 10 开始倒数
@@ -1186,44 +1220,49 @@ void Game::Render()
 }
 
 void Game::Clean() {
-    // 停止播放并释放音乐资源
+    ClearBattleObjects();
+
     Mix_HaltMusic();
-    Mix_FreeMusic(bgm_Menu);
-    Mix_FreeMusic(bgm_Battle);
-    Mix_FreeChunk(se_Shoot);
-    Mix_FreeChunk(se_EnemyShoot1);
-    Mix_FreeChunk(se_EnemyShoot2);
-    Mix_FreeChunk(se_Dead);
-    Mix_FreeChunk(se_Victory);
-    Mix_FreeChunk(se_PowerUp);
-    Mix_FreeChunk(se_Select);
-    Mix_FreeChunk(se_BeHitted);
-    Mix_FreeChunk(se_REIMUBomb);
-    Mix_FreeChunk(se_MARISABomb);
-    // 关闭音频设备
+
+    FreeMusic(bgm_Menu);
+    FreeMusic(bgm_Battle);
+    FreeChunk(se_Shoot);
+    FreeChunk(se_EnemyShoot1);
+    FreeChunk(se_EnemyShoot2);
+    FreeChunk(se_Dead);
+    FreeChunk(se_Victory);
+    FreeChunk(se_PowerUp);
+    FreeChunk(se_Select);
+    FreeChunk(se_BeHitted);
+    FreeChunk(se_REIMUBomb);
+    FreeChunk(se_MARISABomb);
     Mix_CloseAudio();
-    // 记得销毁所有Texture和指针
-    SDL_DestroyRenderer(cur_Renderer);
-    SDL_DestroyWindow(cur_Window);
-    SDL_DestroyTexture(tex_BackgroundMenu);
-    SDL_DestroyTexture(tex_BackgroundBattle);
-    TTF_Quit(); IMG_Quit(); SDL_Quit();
-    // 清理失效对象 (非常重要！)
-    enemyBullets.erase(std::remove_if(enemyBullets.begin(), enemyBullets.end(),
-        [](Bullet* b) {
-            if (!b->active) { delete b; return true; }
-            return false;
-        }), enemyBullets.end());
 
-    playerBullets.erase(std::remove_if(playerBullets.begin(), playerBullets.end(),
-        [](Bullet* b) {
-            if (!b->active) { delete b; return true; }
-            return false;
-        }), playerBullets.end());
+    DestroyTexture(tex_PlayerReimu);
+    DestroyTexture(tex_PlayerMarisa);
+    DestroyTexture(tex_Enemy_Reimu);
+    DestroyTexture(tex_Enemy_Marisa);
+    DestroyTexture(tex_EnemyBullet);
+    DestroyTexture(tex_PlayerBullet);
+    tex_PowerUp = nullptr; // tex_PowerUp 只是 tex_PlayerBullet 的别名，不能重复销毁。
+    DestroyTexture(tex_BackgroundMenu);
+    DestroyTexture(tex_BackgroundBattle);
 
-    powerUps.erase(std::remove_if(powerUps.begin(), powerUps.end(),
-        [](PowerUp* p) {
-            if (!p->active) { delete p; return true; }
-            return false;
-        }), powerUps.end());
+    if (font) {
+        TTF_CloseFont(font);
+        font = nullptr;
+    }
+
+    if (cur_Renderer) {
+        SDL_DestroyRenderer(cur_Renderer);
+        cur_Renderer = nullptr;
+    }
+    if (cur_Window) {
+        SDL_DestroyWindow(cur_Window);
+        cur_Window = nullptr;
+    }
+
+    TTF_Quit();
+    IMG_Quit();
+    SDL_Quit();
 }

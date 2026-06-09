@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <PropertyGroup Label="CollaboratorDependencyPaths">
+    <!--
+      协作者可以通过同名环境变量覆盖这些默认路径。
+      示例：setx SDL2_DIR "D:\libs\SDL2-2.32.10"
+    -->
+    <SDL2_DIR Condition="'$(SDL2_DIR)' == ''">D:\SDL2-devel-2.32.10-VC\SDL2-2.32.10</SDL2_DIR>
+    <SDL2_IMAGE_DIR Condition="'$(SDL2_IMAGE_DIR)' == ''">D:\SDL2_image-devel-2.8.5-VC\SDL2_image-2.8.5</SDL2_IMAGE_DIR>
+    <SDL2_TTF_DIR Condition="'$(SDL2_TTF_DIR)' == ''">D:\SDL_ttf\SDL2_ttf-2.24.0</SDL2_TTF_DIR>
+    <SDL2_MIXER_DIR Condition="'$(SDL2_MIXER_DIR)' == ''">D:\SDL_Mixer\SDL2_mixer-2.8.1</SDL2_MIXER_DIR>
+  </PropertyGroup>
+</Project>
