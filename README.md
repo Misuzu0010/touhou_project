@@ -63,6 +63,16 @@ MSBuild.exe touhou_project.sln /p:Configuration=Release /p:Platform=x64 /m
 - 字体：`touhou_project/assets/fonts/SimHei.ttf`。
 - 音频：`touhou_project/assets/audios/` 和 `touhou_project/assets/sfx/`。
 
+## 操作说明
+
+- 主菜单：方向键上下切换，`Z` 确认。
+- 角色选择：左右方向键切换角色，`Z` 开始战斗，`ESC` 返回主菜单。
+- 帮助界面：可从主菜单进入，`Z` 或 `ESC` 返回主菜单。
+- 战斗中移动：方向键移动，按住 `Left Shift` 进入低速移动并显示判定点。
+- 战斗中攻击：按住 `Z` 持续射击，`X` 释放符卡/Bomb。
+- 暂停功能：战斗中按 `ESC` 进入暂停界面，可继续游戏或返回主菜单。
+- 结算界面：`GAME OVER` 时可按 `R` 续关，`ESC` 返回主菜单；胜利后按 `ESC` 返回主菜单。
+
 ## 协作注意事项
 
 - 不要把本机生成目录提交到 Git，例如 `.vs/`、`x64/`、`Debug/`、`Release/`。

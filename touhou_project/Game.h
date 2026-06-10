@@ -15,9 +15,11 @@
 enum class State {
     MAIN_MENU,
     VOLUME_SETTINGS,
+    HELP,
     SELECT_CHARACTER,
     DIALOGUE,
     PLAYING,
+    PAUSED,
     GAME_OVER,
     VICTORY
 };
@@ -102,6 +104,7 @@ private:
     // 菜单、角色选择和 Boss 阶段控制状态。
     int menuSelect = 0;
     int menuCursor = 0;
+    int pauseMenuSelect = 0;
     CharacterID selectedCharID = CharacterID::REIMU;
     std::vector<EnemyPhase> enemyPhases;
     int currentPhaseIndex = 0;

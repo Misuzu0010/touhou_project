@@ -117,6 +117,7 @@ bool Game::Init()
     lastTime = SDL_GetTicks();
     CurrentState = State::MAIN_MENU;
     menuCursor = 0;
+    pauseMenuSelect = 0;
     Mix_VolumeMusic(bgmVolume);      // 同步背景音乐音量
     Mix_Volume(-1, sfxVolume);       // 同步所有音效频道的音量 (-1表示所有频道)
     if (bgm_Menu) Mix_PlayMusic(bgm_Menu, -1);
@@ -193,6 +194,7 @@ void Game::InitBattle(CharacterID playerID)
     // 开始新战斗前先清理上一局遗留对象，避免子弹、P 点或 Boss 残留。
     ClearBattleObjects();
     selectedCharID = playerID;
+    pauseMenuSelect = 0;
 
     if (tex_PlayerReimu) SDL_SetTextureColorMod(tex_PlayerReimu, 255, 255, 255);
     if (tex_PlayerMarisa) SDL_SetTextureColorMod(tex_PlayerMarisa, 255, 255, 255);
@@ -325,7 +327,7 @@ void Game::Update(float DeltaTime)
                 keyLock = true;
             }
             if (key[SDL_SCANCODE_DOWN]) {
-                if (menuSelect < 2) menuSelect++; // 主菜单共有 3 个选项：开始、音量、退出。
+                if (menuSelect < 3) menuSelect++; // 主菜单共有 4 个选项：开始、音量、帮助、退出。
                 PlaySfx(se_Select);
                 keyLock = true;
             }
@@ -338,7 +340,13 @@ void Game::Update(float DeltaTime)
                     CurrentState = State::VOLUME_SETTINGS;
                     PlaySfx(se_Select);
                 }
-                else if (menuSelect == 2) is_Running = false;
+                else if (menuSelect == 2) {
+                    CurrentState = State::HELP;
+                    PlaySfx(se_Select);
+                }
+                else if (menuSelect == 3) {
+                    is_Running = false;
+                }
                 keyLock = true;
             }
             
@@ -346,6 +354,20 @@ void Game::Update(float DeltaTime)
 
         // 当所有按键都松开时，解锁
         if (!key[SDL_SCANCODE_UP] && !key[SDL_SCANCODE_DOWN] && !key[SDL_SCANCODE_Z]) {
+            keyLock = false;
+        }
+        break;
+    }
+
+    case State::HELP:
+    {
+        if (!keyLock && (key[SDL_SCANCODE_Z] || key[SDL_SCANCODE_ESCAPE])) {
+            CurrentState = State::MAIN_MENU;
+            PlaySfx(se_Select);
+            keyLock = true;
+        }
+
+        if (!key[SDL_SCANCODE_Z] && !key[SDL_SCANCODE_ESCAPE]) {
             keyLock = false;
         }
         break;
@@ -459,6 +481,18 @@ void Game::Update(float DeltaTime)
 
     case State::PLAYING:
     {
+        static bool escPressed = false;
+        if (key[SDL_SCANCODE_ESCAPE]) {
+            if (!escPressed) {
+                CurrentState = State::PAUSED;
+                pauseMenuSelect = 0;
+                PlaySfx(se_Select);
+                escPressed = true;
+            }
+            break;
+        }
+        escPressed = false;
+
         if (player) player->Update(DeltaTime);
 
         // 玩家射击：按住 Z 时按冷却间隔连续发弹，火力等级会增加侧向子弹。
@@ -680,6 +714,50 @@ void Game::Update(float DeltaTime)
         break;
     }
 
+    case State::PAUSED:
+    {
+        if (!keyLock) {
+            if (key[SDL_SCANCODE_UP]) {
+                if (pauseMenuSelect > 0) pauseMenuSelect--;
+                PlaySfx(se_Select);
+                keyLock = true;
+            }
+            else if (key[SDL_SCANCODE_DOWN]) {
+                if (pauseMenuSelect < 1) pauseMenuSelect++;
+                PlaySfx(se_Select);
+                keyLock = true;
+            }
+            else if (key[SDL_SCANCODE_Z]) {
+                if (pauseMenuSelect == 0) {
+                    CurrentState = State::PLAYING;
+                }
+                else {
+                    CurrentState = State::MAIN_MENU;
+                    menuSelect = 0;
+                    continueTimer = ContinueSeconds;
+                    ClearBattleObjects();
+                    if (bgm_Menu) {
+                        Mix_HaltMusic();
+                        Mix_PlayMusic(bgm_Menu, -1);
+                    }
+                }
+                PlaySfx(se_Select);
+                keyLock = true;
+            }
+            else if (key[SDL_SCANCODE_ESCAPE]) {
+                CurrentState = State::PLAYING;
+                PlaySfx(se_Select);
+                keyLock = true;
+            }
+        }
+
+        if (!key[SDL_SCANCODE_UP] && !key[SDL_SCANCODE_DOWN] &&
+            !key[SDL_SCANCODE_Z] && !key[SDL_SCANCODE_ESCAPE]) {
+            keyLock = false;
+        }
+        break;
+    }
+
     case State::GAME_OVER:
     case State::VICTORY:
     {
@@ -755,6 +833,7 @@ void Game::Render()
     SDL_Rect bgRect = { 0, 0, 1920, 1080 };
     if (CurrentState == State::MAIN_MENU ||
         CurrentState == State::VOLUME_SETTINGS ||
+        CurrentState == State::HELP ||
         CurrentState == State::SELECT_CHARACTER)
     {
         if (tex_BackgroundMenu) {
@@ -814,15 +893,31 @@ void Game::Render()
                 SDL_FreeSurface(sVol); SDL_DestroyTexture(tVol);
             }
 
-            // --- [4. 绘制选项 2：退出游戏] ---
-            SDL_Color colorQuit = (menuSelect == 2) ? SDL_Color{ 255, 255, 0, 255 } : SDL_Color{ 150, 150, 150, 255 };
+            // --- [4. 绘制选项 2：帮助界面] ---
+            SDL_Color colorHelp = (menuSelect == 2) ? SDL_Color{ 255, 255, 0, 255 } : SDL_Color{ 150, 150, 150, 255 };
+            SDL_Surface* sHelp = TTF_RenderUTF8_Blended(font, "帮助说明 (HELP)", colorHelp);
+            if (sHelp) {
+                SDL_Texture* tHelp = SDL_CreateTextureFromSurface(cur_Renderer, sHelp);
+                SDL_Rect rHelp = { (1920 - sHelp->w) / 2, 750, sHelp->w, sHelp->h };
+                SDL_RenderCopy(cur_Renderer, tHelp, NULL, &rHelp);
+
+                if (menuSelect == 2) {
+                    SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 0, 255);
+                    SDL_Rect pointer = { rHelp.x - 50, rHelp.y + 5, 30, 30 };
+                    SDL_RenderFillRect(cur_Renderer, &pointer);
+                }
+                SDL_FreeSurface(sHelp); SDL_DestroyTexture(tHelp);
+            }
+
+            // --- [5. 绘制选项 3：退出游戏] ---
+            SDL_Color colorQuit = (menuSelect == 3) ? SDL_Color{ 255, 255, 0, 255 } : SDL_Color{ 150, 150, 150, 255 };
             SDL_Surface* s2 = TTF_RenderUTF8_Blended(font, "断开连接 (QUIT)", colorQuit);
             if (s2) {
                 SDL_Texture* t2 = SDL_CreateTextureFromSurface(cur_Renderer, s2);
-                SDL_Rect r2 = { (1920 - s2->w) / 2, 750, s2->w, s2->h };
+                SDL_Rect r2 = { (1920 - s2->w) / 2, 850, s2->w, s2->h };
                 SDL_RenderCopy(cur_Renderer, t2, NULL, &r2);
 
-                if (menuSelect == 2) {
+                if (menuSelect == 3) {
                     SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 0, 255);
                     SDL_Rect pointer = { r2.x - 50, r2.y + 5, 30, 30 };
                     SDL_RenderFillRect(cur_Renderer, &pointer);
@@ -830,13 +925,61 @@ void Game::Render()
                 SDL_FreeSurface(s2); SDL_DestroyTexture(t2);
             }
 
-            // --- [5. 绘制页脚提示] ---
+            // --- [6. 绘制页脚提示] ---
             SDL_Surface* hint = TTF_RenderUTF8_Blended(font,"使用方向键切换，Z 键确认",{ 100, 100, 100, 255 });
             if (hint) {
                 SDL_Texture* hTex = SDL_CreateTextureFromSurface(cur_Renderer, hint);
                 SDL_Rect hRect = { (1920 - hint->w) / 2, 950, hint->w, hint->h };
                 SDL_RenderCopy(cur_Renderer, hTex, NULL, &hRect);
                 SDL_FreeSurface(hint); SDL_DestroyTexture(hTex);
+            }
+        }
+    }
+
+    if (CurrentState == State::HELP) {
+        if (font) {
+            SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 0, 180);
+            SDL_Rect fullScreen = { 0, 0, 1920, 1080 };
+            SDL_RenderFillRect(cur_Renderer, &fullScreen);
+
+            SDL_Color titleColor = { 255, 255, 255, 255 };
+            SDL_Surface* titleSurf = TTF_RenderUTF8_Blended(font, "帮助与操作说明", titleColor);
+            if (titleSurf) {
+                SDL_Texture* titleTex = SDL_CreateTextureFromSurface(cur_Renderer, titleSurf);
+                SDL_Rect titleRect = { (1920 - titleSurf->w) / 2, 180, titleSurf->w, titleSurf->h };
+                SDL_RenderCopy(cur_Renderer, titleTex, NULL, &titleRect);
+                SDL_FreeSurface(titleSurf);
+                SDL_DestroyTexture(titleTex);
+            }
+
+            const char* helpLines[] = {
+                "方向键：移动主菜单光标与操作角色",
+                "Z 键：确认、跳过对话、持续射击",
+                "X 键：释放符卡 / Bomb",
+                "左 Shift：低速移动并显示判定点",
+                "ESC：战斗中暂停，暂停页可继续或返回主菜单",
+                "R 键：仅在 Game Over 后续关"
+            };
+
+            for (int i = 0; i < 6; ++i) {
+                SDL_Surface* lineSurf = TTF_RenderUTF8_Blended(font, helpLines[i], { 220, 220, 220, 255 });
+                if (lineSurf) {
+                    SDL_Texture* lineTex = SDL_CreateTextureFromSurface(cur_Renderer, lineSurf);
+                    SDL_Rect lineRect = { 420, 320 + i * 80, lineSurf->w, lineSurf->h };
+                    SDL_RenderCopy(cur_Renderer, lineTex, NULL, &lineRect);
+                    SDL_FreeSurface(lineSurf);
+                    SDL_DestroyTexture(lineTex);
+                }
+            }
+
+            SDL_Surface* hintSurf = TTF_RenderUTF8_Blended(font, "按 Z 或 ESC 返回主菜单", { 100, 255, 255, 255 });
+            if (hintSurf) {
+                SDL_Texture* hintTex = SDL_CreateTextureFromSurface(cur_Renderer, hintSurf);
+                SDL_Rect hintRect = { (1920 - hintSurf->w) / 2, 900, hintSurf->w, hintSurf->h };
+                SDL_RenderCopy(cur_Renderer, hintTex, NULL, &hintRect);
+                SDL_FreeSurface(hintSurf);
+                SDL_DestroyTexture(hintTex);
             }
         }
     }
@@ -943,7 +1086,7 @@ void Game::Render()
     // ============================================================
     // 状态 B: 游戏进行中或对话中（包含时停逻辑）
     // ============================================================
-    else if (CurrentState == State::PLAYING || CurrentState == State::DIALOGUE) {
+    else if (CurrentState == State::PLAYING || CurrentState == State::DIALOGUE || CurrentState == State::PAUSED) {
 
         // 1. 绘制游戏层
         if (player) player->Render(cur_Renderer);
@@ -1154,6 +1297,67 @@ void Game::Render()
                     SDL_RenderCopy(cur_Renderer, hintTex, NULL, &hintDst);
                     SDL_FreeSurface(hintSurf); SDL_DestroyTexture(hintTex);
                 }
+            }
+        }
+
+        if (CurrentState == State::PAUSED && font) {
+            SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 0, 170);
+            SDL_Rect fullScreen = { 0, 0, 1920, 1080 };
+            SDL_RenderFillRect(cur_Renderer, &fullScreen);
+
+            SDL_Rect panel = { 660, 270, 600, 420 };
+            SDL_SetRenderDrawColor(cur_Renderer, 20, 20, 60, 235);
+            SDL_RenderFillRect(cur_Renderer, &panel);
+            SDL_SetRenderDrawColor(cur_Renderer, 220, 220, 220, 255);
+            SDL_RenderDrawRect(cur_Renderer, &panel);
+
+            SDL_Surface* titleSurf = TTF_RenderUTF8_Blended(font, "游戏暂停", { 255, 255, 255, 255 });
+            if (titleSurf) {
+                SDL_Texture* titleTex = SDL_CreateTextureFromSurface(cur_Renderer, titleSurf);
+                SDL_Rect titleRect = { (1920 - titleSurf->w) / 2, 340, titleSurf->w, titleSurf->h };
+                SDL_RenderCopy(cur_Renderer, titleTex, NULL, &titleRect);
+                SDL_FreeSurface(titleSurf);
+                SDL_DestroyTexture(titleTex);
+            }
+
+            SDL_Color continueColor = (pauseMenuSelect == 0) ? SDL_Color{ 255, 255, 0, 255 } : SDL_Color{ 170, 170, 170, 255 };
+            SDL_Surface* continueSurf = TTF_RenderUTF8_Blended(font, "继续游戏", continueColor);
+            if (continueSurf) {
+                SDL_Texture* continueTex = SDL_CreateTextureFromSurface(cur_Renderer, continueSurf);
+                SDL_Rect continueRect = { (1920 - continueSurf->w) / 2, 450, continueSurf->w, continueSurf->h };
+                SDL_RenderCopy(cur_Renderer, continueTex, NULL, &continueRect);
+                if (pauseMenuSelect == 0) {
+                    SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 0, 255);
+                    SDL_Rect pointer = { continueRect.x - 50, continueRect.y + 4, 24, 24 };
+                    SDL_RenderFillRect(cur_Renderer, &pointer);
+                }
+                SDL_FreeSurface(continueSurf);
+                SDL_DestroyTexture(continueTex);
+            }
+
+            SDL_Color backColor = (pauseMenuSelect == 1) ? SDL_Color{ 255, 255, 0, 255 } : SDL_Color{ 170, 170, 170, 255 };
+            SDL_Surface* backSurf = TTF_RenderUTF8_Blended(font, "返回主菜单", backColor);
+            if (backSurf) {
+                SDL_Texture* backTex = SDL_CreateTextureFromSurface(cur_Renderer, backSurf);
+                SDL_Rect backRect = { (1920 - backSurf->w) / 2, 530, backSurf->w, backSurf->h };
+                SDL_RenderCopy(cur_Renderer, backTex, NULL, &backRect);
+                if (pauseMenuSelect == 1) {
+                    SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 0, 255);
+                    SDL_Rect pointer = { backRect.x - 50, backRect.y + 4, 24, 24 };
+                    SDL_RenderFillRect(cur_Renderer, &pointer);
+                }
+                SDL_FreeSurface(backSurf);
+                SDL_DestroyTexture(backTex);
+            }
+
+            SDL_Surface* hintSurf = TTF_RenderUTF8_Blended(font, "方向键选择，Z 确认，ESC 继续游戏", { 100, 255, 255, 255 });
+            if (hintSurf) {
+                SDL_Texture* hintTex = SDL_CreateTextureFromSurface(cur_Renderer, hintSurf);
+                SDL_Rect hintRect = { (1920 - hintSurf->w) / 2, 620, hintSurf->w, hintSurf->h };
+                SDL_RenderCopy(cur_Renderer, hintTex, NULL, &hintRect);
+                SDL_FreeSurface(hintSurf);
+                SDL_DestroyTexture(hintTex);
             }
         }
     }
