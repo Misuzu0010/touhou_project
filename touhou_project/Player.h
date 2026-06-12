@@ -90,9 +90,9 @@ public:
 
         // 玩家中心点边界限制，防止角色移动出 1920x1080 画面。
         if (Position.x < 30) Position.x = 30;
-        if (Position.x > 1890) Position.x = 1890;
+        if (Position.x > 1920) Position.x = 1920;
         if (Position.y < 30) Position.y = 30;
-        if (Position.y > 1050) Position.y = 1050;
+        if (Position.y > 1080) Position.y = 1080;
 
         // 更新视觉计时器，用于呼吸和漂浮动画。
         visualTime += deltaTime * 3.0f; // 稍微快一点的呼吸节奏
@@ -193,7 +193,7 @@ public:
     int CollectPowerUp() {
         if (powerLevel >= 4) return 0; // 最高火力为 4.00
 
-        powerValue += 0.05f; // 每个 P 点增加 0.05
+        powerValue += 0.5f; // 每个 P 点增加 0.05
 
         if (powerValue >= 1.0f) {
             powerValue -= 1.0f; // 溢出转入下一级

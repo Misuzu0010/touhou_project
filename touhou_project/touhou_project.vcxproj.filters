@@ -24,6 +24,12 @@
     <ClCompile Include="Bullet.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="StageEvent.h">
+      <Filter>头文件</Filter>
+    </ClCompile>
+    <ClCompile Include="StageDirector.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h">
@@ -48,6 +54,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="PowerUp.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="StageDirector.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

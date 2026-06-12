@@ -371,6 +371,11 @@ FodyWeavers.xsd
 !.vscode/launch.json
 !.vscode/extensions.json
 
+# Local report/tool output
+/outputs/
+/package.json
+/package-lock.json
+
 # OS generated files
 .DS_Store
 .AppleDouble

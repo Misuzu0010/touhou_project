@@ -11,16 +11,7 @@
 #include "BulletPattern.h"
 #include "PowerUp.h"
 
-// 游戏主状态机。Update 和 Render 会根据该状态分发到不同界面/逻辑。
-enum class State {
-    MAIN_MENU,
-    VOLUME_SETTINGS,
-    SELECT_CHARACTER,
-    DIALOGUE,
-    PLAYING,
-    GAME_OVER,
-    VICTORY
-};
+#include "StageDirector.h"  // 关卡事件系统：StageDirector + StageEvent（指南 §3, §6）
 
 enum class CharacterID { REIMU = 0, MARISA = 1 };
 
@@ -105,6 +96,9 @@ private:
     CharacterID selectedCharID = CharacterID::REIMU;
     std::vector<EnemyPhase> enemyPhases;
     int currentPhaseIndex = 0;
+
+    // 关卡导演：管理整局事件时间线，每帧 Update 驱动（指南 §5）
+    StageDirector stageDirector;
     State stateBeforeDialogue = State::PLAYING;
 
     // 帧时间和玩法计时器。
@@ -112,7 +106,6 @@ private:
     float shootTimer = 0.0f;        // 玩家射击冷却。
     float enemyShootTimer = 0.0f;   // Boss 下一波弹幕计时。
     float powerUpSpawnTimer = 0.0f; // 下一批 P 点生成计时。
-    float powerUpSpawnInterval = 3.0f; // 预留字段，当前生成间隔在 Update 中随机重置。
     float continueTimer = 10.0f; // 续关倒计时，初始 10 秒。
     float spellTimer = 0.0f;     // 符卡剩余持续时间。
     bool isSpellActive = false;  // 当前是否处于符卡演出和伤害阶段。
@@ -126,6 +119,9 @@ private:
     void SetupDialogue(CharacterID playerID);
     void SetupEnemyPhases(CharacterID playerID);
     void CheckEnemyPhase();
+    void SetupStageEvents(CharacterID playerID);  // 配置本关卡的事件时间线（指南 §4 事件类型）
+    void ApplyStageSignals(GameContext& ctx);
+    void ApplyFinishRequest(bool isVictory);
 
     // 战斗状态和资源生命周期辅助函数。
     void ResetRunState();

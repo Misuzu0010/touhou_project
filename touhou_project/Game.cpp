@@ -1,10 +1,13 @@
 ﻿#pragma execution_character_set("utf-8")  //解决中文不显示问题
 #include "Game.h"
+#include"StageDirector.h"
+#include "StageEvent.h"
 #include <algorithm>
 #include <iostream>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <cmath>
 #include <memory>
 
 namespace {
@@ -25,6 +28,14 @@ void RemoveInactiveObjects(std::vector<std::unique_ptr<T>>& objects)
         [](const std::unique_ptr<T>& object) {
             return object && !object->IsActive();
         }), objects.end());
+}
+
+void DrawFilledCircle(SDL_Renderer* renderer, int centerX, int centerY, int radius)
+{
+    for (int y = -radius; y <= radius; ++y) {
+        int halfWidth = static_cast<int>(std::sqrt(static_cast<double>(radius * radius - y * y)));
+        SDL_RenderDrawLine(renderer, centerX - halfWidth, centerY + y, centerX + halfWidth, centerY + y);
+    }
 }
 }
 
@@ -161,6 +172,43 @@ void Game::PlaySfx(Mix_Chunk* chunk)
     }
 }
 
+void Game::ApplyFinishRequest(bool isVictory)
+{
+    isSpellActive = false;
+    spellTimer = 0.0f;
+    shakeTime = 0.0f;
+    Mix_HaltMusic();
+
+    if (isVictory) {
+        PlaySfx(se_Victory);
+        CurrentState = State::VICTORY;
+    }
+    else {
+        continueTimer = ContinueSeconds;
+        PlaySfx(se_Dead);
+        CurrentState = State::GAME_OVER;
+    }
+}
+
+void Game::ApplyStageSignals(GameContext& ctx)
+{
+    if (ctx.itemSpawnRequested) {
+        powerUps.push_back(std::make_unique<PowerUp>(ctx.itemSpawnX, ctx.itemSpawnY, tex_PowerUp));
+        ctx.itemSpawnRequested = false;
+    }
+
+    if (ctx.finishRequested) {
+        ApplyFinishRequest(ctx.finishIsVictory);
+        ctx.finishRequested = false;
+    }
+
+    if (ctx.dialogueRequested && CurrentState == State::PLAYING && !DialoueQueue.empty()) {
+        stateBeforeDialogue = State::PLAYING;
+        CurrentState = State::DIALOGUE;
+        ctx.dialogueRequested = false;
+    }
+}
+
 void Game::DestroyTexture(SDL_Texture*& texture)
 {
     // SDL_Texture 需要在销毁 renderer 前释放；释放后置空防止重复释放。
@@ -212,6 +260,9 @@ void Game::InitBattle(CharacterID playerID)
     SetupDialogue(playerID);
     SetupEnemyPhases(playerID);
     ResetRunState();
+
+    // 关卡导演初始化：注册事件时间线。开场对话结束进入 PLAYING 后，事件会从 0 秒开始推进。
+    SetupStageEvents(playerID);
 }
 
 void Game::SetupDialogue(CharacterID playerID) {
@@ -255,10 +306,89 @@ void Game::SetupEnemyPhases(CharacterID playerID) {
     enemyPhases.push_back(p2);
 }
 
+void Game::SetupStageEvents(CharacterID playerID)
+{
+    stageDirector.Reset();
+
+    const float firstRewardX = (playerID == CharacterID::REIMU) ? 900.0f : 1020.0f;
+
+    // 定时奖励：战斗开始后给玩家补充一次火力点。
+    auto time5 = std::make_unique<TimeEvent>(5.0f);
+    time5->Bind([firstRewardX](GameContext& ctx) {
+        ctx.itemSpawnRequested = true;
+        ctx.itemSpawnX = firstRewardX;
+        ctx.itemSpawnY = 300.0f;
+    });
+    stageDirector.AddEvent(std::move(time5));
+
+    auto time10 = std::make_unique<TimeEvent>(10.0f);
+    time10->Bind([](GameContext& ctx) {
+        ctx.itemSpawnRequested = true;
+        ctx.itemSpawnX = 640.0f;
+        ctx.itemSpawnY = 350.0f;
+    });
+    stageDirector.AddEvent(std::move(time10));
+
+    // 中场提示对话：由 DialogueEvent 准备对话内容，Game 只响应 dialogueRequested 信号。
+    auto midDialogue = std::make_unique<DialogueEvent>(15.0f);
+    midDialogue->Bind([this, playerID](GameContext& ctx) {
+        DialoueQueue.clear();
+        cur_index = 0;
+        if (playerID == CharacterID::REIMU) {
+            DialoueQueue.push_back({ "Reimu", "攻击流量开始变形了，小心新的弹幕节奏！", {255,100,100,255} });
+            DialoueQueue.push_back({ "Marisa", "现在才看懂可太慢了，DAZE！", {255,255,100,255} });
+        }
+        else {
+            DialoueQueue.push_back({ "Marisa", "灵梦，别以为换个过滤规则就能挡住我！", {255,255,100,255} });
+            DialoueQueue.push_back({ "Reimu", "我会把异常请求全部退回去。", {255,100,100,255} });
+        }
+        ctx.dialogueRequested = true;
+    });
+    stageDirector.AddEvent(std::move(midDialogue));
+
+    // 血量阈值奖励：阶段剧情仍由 CheckEnemyPhase 负责，这里只处理事件化奖励。
+    auto hp4000 = std::make_unique<HpThresholdEvent>(4000.0f);
+    hp4000->Bind([](GameContext& ctx) {
+        ctx.itemSpawnRequested = true;
+        ctx.itemSpawnX = 760.0f;
+        ctx.itemSpawnY = 360.0f;
+    });
+    stageDirector.AddEvent(std::move(hp4000));
+
+    auto hp2000 = std::make_unique<HpThresholdEvent>(2000.0f);
+    hp2000->Bind([](GameContext& ctx) {
+        ctx.itemSpawnRequested = true;
+        ctx.itemSpawnX = 960.0f;
+        ctx.itemSpawnY = 400.0f;
+    });
+    stageDirector.AddEvent(std::move(hp2000));
+
+    // 阶段切换奖励：只在 CheckEnemyPhase 标记 phaseChanged 的那一帧触发。
+    auto phase1 = std::make_unique<PhaseChangeEvent>(1);
+    phase1->Bind([](GameContext& ctx) {
+        ctx.itemSpawnRequested = true;
+        ctx.itemSpawnX = 820.0f;
+        ctx.itemSpawnY = 280.0f;
+    });
+    stageDirector.AddEvent(std::move(phase1));
+
+    auto phase2 = std::make_unique<PhaseChangeEvent>(2);
+    phase2->Bind([](GameContext& ctx) {
+        ctx.itemSpawnRequested = true;
+        ctx.itemSpawnX = 1100.0f;
+        ctx.itemSpawnY = 280.0f;
+    });
+    stageDirector.AddEvent(std::move(phase2));
+
+    stageDirector.AddEvent(std::make_unique<SpawnItemEvent>(800.0f, 500.0f, 18.0f));
+    stageDirector.AddEvent(std::make_unique<VictoryEvent>());
+    stageDirector.AddEvent(std::make_unique<DefeatEvent>());
+}
 // 检查 Boss 是否进入下一个血量阶段；触发阶段时暂停战斗并清屏敌弹。
 void Game::CheckEnemyPhase() {
     if (Enemies.empty()) return;
     float hp = Enemies[0]->GetBlood();
+    if (hp <= 0.0f) return;
 
     // 从 currentPhaseIndex 开始检查，避免已触发阶段被重复处理。
     for (int i = currentPhaseIndex; i < enemyPhases.size(); ++i) {
@@ -268,6 +398,17 @@ void Game::CheckEnemyPhase() {
             currentPhaseIndex = i + 1;
 
             enemyPhases[i].dialogueTriggered = true;
+
+            // 指南 §5 步骤5：阶段切换后通知 StageDirector 驱动 PhaseChangeEvent。
+            // 此时仍以 PLAYING 上下文触发事件，之后再进入 DIALOGUE 冻结战斗。
+            GameContext phaseCtx;
+            phaseCtx.state = State::PLAYING;
+            phaseCtx.bossHp = hp;
+            phaseCtx.hasBoss = true;
+            phaseCtx.phaseIndex = currentPhaseIndex;
+            phaseCtx.phaseChanged = true;
+            stageDirector.Update(0.0f, phaseCtx);
+            ApplyStageSignals(phaseCtx);
 
             // 阶段对话结束后会恢复到触发前的游戏状态。
             DialoueQueue = enemyPhases[i].dialogues;
@@ -313,6 +454,7 @@ void Game::Update(float DeltaTime)
 {
     const Uint8* key = SDL_GetKeyboardState(NULL);
     static bool keyLock = false;
+    State oldState = CurrentState;
 
     switch (CurrentState)
     {
@@ -459,6 +601,8 @@ void Game::Update(float DeltaTime)
 
     case State::PLAYING:
     {
+        bool playerDefeatedThisFrame = false;
+
         if (player) player->Update(DeltaTime);
 
         // 玩家射击：按住 Z 时按冷却间隔连续发弹，火力等级会增加侧向子弹。
@@ -512,7 +656,6 @@ void Game::Update(float DeltaTime)
             if (se_MARISABomb && spellUser == CharacterID::MARISA) PlaySfx(se_MARISABomb);
             xPressed = true;
         }
-        if (!key[SDL_SCANCODE_X]) xPressed = false;
         if (!key[SDL_SCANCODE_X]) xPressed = false;
 
         if (isSpellActive) {
@@ -609,21 +752,18 @@ void Game::Update(float DeltaTime)
         // 碰撞：子弹打玩家 (已适配东方残机与无敌机制)
         for (auto& b : enemyBullets) {
             // 只有在子弹激活、玩家存在，且玩家当前【不在】无敌状态时才检测碰撞
-            if (b->IsActive() && player && !player->IsInvincible() && player->CheckCollision(b.get())) {
+            if (!playerDefeatedThisFrame && b->IsActive() && player && !player->IsInvincible() && player->CheckCollision(b.get())) {
 
                 b->Deactivate();      // 销毁击中玩家的子弹
                 player->hit(1.0f);    // 减少一个残机 (原作机制：Miss)
   
 
                 if (player->Dead_judge()) {
-                    // 残机小于 0，彻底游戏结束
-                    isSpellActive = false;
-                    spellTimer = 0.0f;
-                    shakeTime = 0.0f;
-                    Mix_HaltMusic();    // 停止背景音乐
-                    continueTimer = ContinueSeconds;
-                    PlaySfx(se_Dead);
-                    CurrentState = State::GAME_OVER;
+                    // 残机小于 0，交给 DefeatEvent 统一收尾。
+                    playerDefeatedThisFrame = true;
+                    for (auto& eb : enemyBullets) {
+                        eb->Deactivate();
+                    }
                 }
                 else {
                     PlaySfx(se_BeHitted);
@@ -668,14 +808,21 @@ void Game::Update(float DeltaTime)
         // 对象清理后再检查阶段，避免阶段切换对话中残留已失效实体。
         CheckEnemyPhase();
 
-        // 胜利判定
-        if (!Enemies.empty() && Enemies[0]->GetBlood() <= 0) {
-            PlaySfx(se_Victory); // 胜利音效
-            Mix_HaltMusic(); // 停止战斗BGM
-            CurrentState = State::VICTORY;
-            isSpellActive = false;
-            spellTimer = 0.0f;
-            shakeTime = 0.0f;
+        // ---- StageDirector 事件管线 ----
+        GameContext ctx;
+        ctx.state = CurrentState;
+        ctx.hasBoss = !Enemies.empty();
+        ctx.bossHp = ctx.hasBoss ? Enemies[0]->GetBlood() : 0.0f;
+        ctx.playerDefeated = playerDefeatedThisFrame;
+        ctx.phaseIndex = currentPhaseIndex;
+        // ctx.stageTime 由 StageDirector::Update 内部累加并回写
+
+        stageDirector.Update(DeltaTime, ctx);
+        ApplyStageSignals(ctx);
+
+        // 胜利兜底：正常情况下由 VictoryEvent 触发，这里防止事件表异常时 Boss 死亡无响应。
+        if (CurrentState == State::PLAYING && !Enemies.empty() && Enemies[0]->GetBlood() <= 0.0f) {
+            ApplyFinishRequest(true);
         }
         break;
     }
@@ -743,6 +890,11 @@ void Game::Update(float DeltaTime)
         }
         break;
     }
+    }
+
+    // 指南 §5 步骤3：状态变化时通知导演
+    if (oldState != CurrentState) {
+        stageDirector.OnStateChanged(oldState, CurrentState);
     }
 }
 void Game::Render()
@@ -973,8 +1125,7 @@ void Game::Render()
                     int ty = static_cast<int>(playerPosition.y + std::sin(angle) * dist);
 
                     SDL_SetRenderDrawColor(cur_Renderer, 255, 100, 200, 180);
-                    SDL_Rect orb = { tx - 60, ty - 60, 120, 120 };
-                    SDL_RenderFillRect(cur_Renderer, &orb); // 当前用矩形占位表现光玉效果。
+                    DrawFilledCircle(cur_Renderer, tx, ty, 60);
                 }
             }
             else if (spellUser == CharacterID::MARISA) {
