@@ -60,7 +60,10 @@ Assert-Match $gameCpp "void\s+Game::InitBattle[\s\S]*continueTimer\s*=" "InitBat
 Assert-Match $gameCpp "if\s*\(\s*p->IsActive\(\)\s*&&\s*player\s*&&\s*isColliding\s*\)" "PowerUp pickup should use the computed AABB collision."
 
 Assert-NoMatch $gameCpp "se_REIMUBomb\s*&&\s*spellUser\s*==\s*CharacterID::MARISA" "Marisa bomb should not check se_REIMUBomb."
-Assert-Match $gameCpp "se_MARISABomb\s*&&\s*spellUser\s*==\s*CharacterID::MARISA" "Marisa bomb should check se_MARISABomb."
+Assert-Match $gameCpp "se_MARISABomb" "Marisa bomb SFX should be referenced."
+Assert-Match $gameCpp "MarisaSpellCard" "Marisa SpellCard class should be used."
+Assert-Match $gameCpp "ReimuSpellCard" "Reimu SpellCard class should be used."
+Assert-Match $gameCpp "activeSpell" "Game should use activeSpell for spell card system."
 
 Assert-NoMatch $gameCpp "victory\.mov" "Victory SFX should not be loaded from a .mov file with Mix_LoadWAV."
 Assert-Match $gameCpp "constexpr\s+int\s+MaxVolume\s*=\s*128" "MaxVolume should be 128."

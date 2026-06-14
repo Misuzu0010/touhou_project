@@ -6,6 +6,9 @@
 
 class Player : public Entity
 {
+    friend class SpellCard;
+    friend class ReimuSpellCard;
+    friend class MarisaSpellCard;
 private:
     // 玩家当前使用残机数。为 0 时进入 Game Over。
     int lives;
@@ -176,9 +179,28 @@ public:
     void SetInvincible(float seconds)
     {
         isInvincible = true;
-        invincTimer = seconds;
+        // 保留已有的更长无敌时间，避免缩短
+        if (seconds > invincTimer) invincTimer = seconds;
         flashTimer = 0.1f;
         visible = true;
+    }
+
+    // 单独更新无敌计时器，供非PLAYING状态（如DIALOGUE）调用
+    void UpdateInvincibility(float deltaTime) {
+        if (invincTimer > 0) {
+            invincTimer -= deltaTime;
+            flashTimer -= deltaTime;
+            if (flashTimer <= 0) {
+                visible = !visible;
+                flashTimer = 0.15f;
+            }
+            if (invincTimer <= 0) {
+                isInvincible = false;
+                visible = true;
+            }
+        } else {
+            visible = true;
+        }
     }
     bool CanUseBomb() const { return bombs > 0; }
     void ConsumeBomb() { if (bombs > 0) bombs--; }
