@@ -24,6 +24,12 @@
     <ClCompile Include="Bullet.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="Item.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Items.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h">
@@ -48,6 +54,18 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="PowerUp.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Item.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="PowerItem.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="BombItem.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="LifeItem.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

@@ -11,6 +11,10 @@
 #include "BulletPattern.h"
 #include "PowerUp.h"
 #include "SpellCard.h"
+#include "Item.h"
+#include "PowerItem.h"
+#include "BombItem.h"
+#include "LifeItem.h"
 
 // 游戏主状态机。Update 和 Render 会根据该状态分发到不同界面/逻辑。
 enum class State {
@@ -102,6 +106,10 @@ private:
     std::vector<std::unique_ptr<Bullet>> enemyBullets;
     std::vector<std::unique_ptr<PowerUp>> powerUps;
 
+    // 通用道具容器，存储所有类型道具的基类指针。
+    // 通过 unique_ptr<Item> 管理生命周期，多态调用 Apply() 实现不同拾取效果。
+    std::vector<std::unique_ptr<Item>> items;
+
     // 菜单、角色选择和 Boss 阶段控制状态。
     int menuSelect = 0;
     int menuCursor = 0;
@@ -118,6 +126,9 @@ private:
     float powerUpSpawnTimer = 0.0f; // 下一批 P 点生成计时。
     float powerUpSpawnInterval = 3.0f; // 预留字段，当前生成间隔在 Update 中随机重置。
     float continueTimer = 10.0f; // 续关倒计时，初始 10 秒。
+    float spellTimer = 0.0f;     // ??????????????????
+    bool isSpellActive = false;  // ????????????????
+    CharacterID spellUser = CharacterID::REIMU; // ????????
     float shakeTime = 0.0f; // 震屏剩余时间。
     float angleOffset = 0.0f; // Boss弹幕旋转偏移。
     float enemySeCooldown = 0.0f; // Boss射击音效冷却。
@@ -139,6 +150,11 @@ private:
     void DestroyTexture(SDL_Texture*& texture);
     void FreeChunk(Mix_Chunk*& chunk);
     void FreeMusic(Mix_Music*& music);
+
+    // 道具系统辅助函数。
+    void SpawnItem(float x, float y);           // 在指定位置随机生成一种道具
+    void UpdateItems(float deltaTime);           // 更新所有道具（移动、边界检测）
+    void CheckItemPickup();                      // 检测玩家与道具碰撞并触发拾取
 
     // 加载图片并将纯白色键处理为透明。
     SDL_Texture* LoadTextureWithColorKey(const char* filename);
