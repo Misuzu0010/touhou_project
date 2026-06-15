@@ -202,4 +202,18 @@ public:
         }
         return 2; // 拾取但未升级
     }
+
+    // ---- 道具拾取接口（供 Item::Apply 调用，不暴露 private 数据成员）----
+
+    // 增加 Bomb 数量，上限为 8
+    void AddBomb(int amount) {
+        bombs += amount;
+        if (bombs > 8) bombs = 8;
+    }
+
+    // 增加残机数，上限为 8
+    void AddLife(int amount) {
+        lives += amount;
+        if (lives > 8) lives = 8;
+    }
 };

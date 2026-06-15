@@ -145,6 +145,7 @@ void Game::ClearBattleObjects()
     playerBullets.clear();
     enemyBullets.clear();
     powerUps.clear();
+    items.clear();
 }
 
 void Game::ClearEnemyBullets()
@@ -476,6 +477,7 @@ void Game::Update(float DeltaTime)
         shootTimer -= DeltaTime;
 
         // 生成 P 点：每隔一段随机时间从屏幕上方掉落一批火力道具。
+        // 同时有一定概率生成 BombItem 或 LifeItem（体现多态道具体系）
         powerUpSpawnTimer -= DeltaTime;
         if (powerUpSpawnTimer <= 0) {
             // 每批生成 3 到 6 个 P 点。
@@ -490,8 +492,20 @@ void Game::Update(float DeltaTime)
                 float offsetX = (float)(rand() % 60 - 30); // -30 到 30 的偏移
                 float offsetY = (float)(rand() % 60 - 30); // -30 到 30 的偏移
 
-                // 初始 Y 在屏幕上方，PowerUp 构造函数会设置上抛和横向漂移。
-                powerUps.push_back(std::make_unique<PowerUp>(batchCenterX + offsetX, -50.0f + offsetY, tex_PowerUp));
+                // 30% 概率生成新类型道具（Bomb/Life），70% 仍为 P 点
+                int roll = rand() % 10;
+                if (roll < 2 && items.size() < 30) {
+                    // 20% 概率生成残机道具（最稀有）
+                    items.push_back(std::make_unique<LifeItem>(batchCenterX + offsetX, -50.0f + offsetY, tex_PowerUp));
+                }
+                else if (roll < 5 && items.size() < 30) {
+                    // 30% 概率生成 Bomb 道具
+                    items.push_back(std::make_unique<BombItem>(batchCenterX + offsetX, -50.0f + offsetY, tex_PowerUp));
+                }
+                else {
+                    // 其余 50% 仍为传统 P 点
+                    powerUps.push_back(std::make_unique<PowerUp>(batchCenterX + offsetX, -50.0f + offsetY, tex_PowerUp));
+                }
             }
 
             // 下一批掉落间隔为 4.0 到 5.9 秒。
@@ -595,6 +609,9 @@ void Game::Update(float DeltaTime)
         for (auto& b : enemyBullets) b->Update(DeltaTime);
         for (auto& p : powerUps) p->Update(DeltaTime);
 
+        // 更新所有新类型道具（Item 多态体系）
+        for (auto& item : items) item->Update(DeltaTime);
+
         // 碰撞：子弹打Boss
         for (auto& b : playerBullets) {
             if (!b->IsActive()) continue;
@@ -660,16 +677,47 @@ void Game::Update(float DeltaTime)
             }
         }
 
+        // 碰撞：拾取新类型道具（Item 多态体系）。
+        // Game 只持有 Item 基类指针，调用 Apply() 时由多态分发到具体道具实现。
+        // 新增道具类型时，此处代码无需修改——符合开闭原则。
+        for (auto& item : items) {
+            if (!item->IsActive() || !player) continue;
+
+            float diffX = std::abs(player->GetPosition().x - item->GetPosition().x);
+            float diffY = std::abs(player->GetPosition().y - item->GetPosition().y);
+
+            float pickUpWidth = 60.0f;
+            float pickUpHeight = 80.0f;
+            bool isColliding = (diffX < pickUpWidth / 2) && (diffY < pickUpHeight / 2);
+
+            if (isColliding) {
+                // 多态调用：Game 不关心具体道具类型，Item 自己知道效果
+                item->Apply(*player);
+                PlaySfx(se_PowerUp);  // 复用拾取音效
+                item->Deactivate();
+            }
+        }
+
         // 清理失效对象
         RemoveInactiveObjects(playerBullets);
         RemoveInactiveObjects(enemyBullets);
         RemoveInactiveObjects(powerUps);
+        RemoveInactiveObjects(items);
 
         // 对象清理后再检查阶段，避免阶段切换对话中残留已失效实体。
         CheckEnemyPhase();
 
         // 胜利判定
         if (!Enemies.empty() && Enemies[0]->GetBlood() <= 0) {
+            // Boss 击杀时掉落一批高品质道具（Bomb + Life）
+            const Vector2D& bossPos = Enemies[0]->GetPosition();
+            for (int i = 0; i < 3; i++) {
+                float offsetX = (float)(rand() % 80 - 40);
+                items.push_back(std::make_unique<BombItem>(bossPos.x + offsetX, bossPos.y + (float)(rand() % 40), tex_PowerUp));
+            }
+            // 必定掉落 1 个残机道具作为击杀奖励
+            items.push_back(std::make_unique<LifeItem>(bossPos.x, bossPos.y, tex_PowerUp));
+
             PlaySfx(se_Victory); // 胜利音效
             Mix_HaltMusic(); // 停止战斗BGM
             CurrentState = State::VICTORY;
@@ -953,6 +1001,8 @@ void Game::Render()
         for (auto& b : enemyBullets) if (b->IsActive()) b->Render(cur_Renderer, tex_EnemyBullet);
         // 道具
         for (auto& p : powerUps) if (p->IsActive()) p->Render(cur_Renderer);
+        // 渲染新类型道具（Item 多态体系）
+        for (auto& item : items) if (item->IsActive()) item->Render(cur_Renderer);
         // 符卡演出层。
         if (isSpellActive) {
             // --- [1. 背景变暗] ---
