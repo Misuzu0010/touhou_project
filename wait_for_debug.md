@@ -1,4 +1,4 @@
-# wait_for_debug
+﻿# wait_for_debug
 
 本文件记录当前代码扫描发现的待修复 bug。每条包含复现情况、重要程度和修改建议。
 
@@ -7,7 +7,7 @@
 - 状态：已修复 BUG-001 到 BUG-013。
 - 修复时间：2026-06-09。
 - 回归检查：`powershell -ExecutionPolicy Bypass -File tests\bug_regression_checks.ps1` 通过。
-- 构建验证：`D:\vs-rebirth\MSBuild\Current\Bin\MSBuild.exe touhou_project.sln /p:Configuration=Release /p:Platform=x64 /m` 通过，0 警告，0 错误。
+- 构建验证：当前项目已验证可在配置好 SDL2 依赖后使用 `x64 / Release` 成功编译运行；本地环境搭建步骤已统一写入 `README.md`。
 - 备注：`victory.mov` 实际文件头是 Ogg 音频，已重命名为 `victory.ogg` 并更新加载路径。
 
 ## BUG-001 Player 动画字段未初始化
@@ -437,3 +437,4 @@ if (player->lives <= 0) lifeStr += "None";
 
 - 如果 `lives` 表示剩余生命数，则改成 `lives <= 0`。
 - 如果 `lives` 表示额外残机数，则 UI 文案不要在 0 时显示 `None`，可以显示 `Last` 或当前生命状态。
+

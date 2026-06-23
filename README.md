@@ -20,30 +20,48 @@
 
 ## SDL 依赖
 
-项目需要以下 SDL2 相关库：
+项目依赖以下 SDL2 开发库：
 
-- SDL2
-- SDL2_image
-- SDL2_ttf
-- SDL2_mixer
+- SDL2 `2.32.10`
+- SDL2_image `2.8.5`
+- SDL2_ttf `2.24.0`
+- SDL2_mixer `2.8.1`
 
-工程会从 `Directory.Build.props` 读取依赖路径。默认值保留为当前开发机路径，协作者可以通过环境变量覆盖：
+工程会从 `Directory.Build.props` 读取依赖路径，并优先使用以下环境变量：
 
-```powershell
-setx SDL2_DIR "D:\libs\SDL2-2.32.10"
-setx SDL2_IMAGE_DIR "D:\libs\SDL2_image-2.8.5"
-setx SDL2_TTF_DIR "D:\libs\SDL2_ttf-2.24.0"
-setx SDL2_MIXER_DIR "D:\libs\SDL2_mixer-2.8.1"
-```
+- `SDL2_DIR`
+- `SDL2_IMAGE_DIR`
+- `SDL2_TTF_DIR`
+- `SDL2_MIXER_DIR`
 
-设置后重新打开终端或 Visual Studio，使环境变量生效。
-
-每个目录下应包含对应的 `include` 和 `lib\x64` 子目录，例如：
+每个目录都必须包含对应的 `include` 和 `lib\x64` 子目录，例如：
 
 ```text
-D:\libs\SDL2-2.32.10\include
-D:\libs\SDL2-2.32.10\lib\x64
+E:\smallgame\_deps\sdl2\installed\SDL2-2.32.10\include
+E:\smallgame\_deps\sdl2\installed\SDL2-2.32.10\lib\x64
 ```
+
+### 新机器首次配置
+
+如果本机还没有 SDL2 开发环境，可以按下面步骤配置：
+
+1. 下载官方 VC 开发包：
+   - `SDL2-devel-2.32.10-VC.zip`
+   - `SDL2_image-devel-2.8.5-VC.zip`
+   - `SDL2_ttf-devel-2.24.0-VC.zip`
+   - `SDL2_mixer-devel-2.8.1-VC.zip`
+2. 解压到任意固定目录，例如：`E:\smallgame\_deps\sdl2\installed`
+3. 设置环境变量：
+
+```powershell
+setx SDL2_DIR "E:\smallgame\_deps\sdl2\installed\SDL2-2.32.10"
+setx SDL2_IMAGE_DIR "E:\smallgame\_deps\sdl2\installed\SDL2_image-2.8.5"
+setx SDL2_TTF_DIR "E:\smallgame\_deps\sdl2\installed\SDL2_ttf-2.24.0"
+setx SDL2_MIXER_DIR "E:\smallgame\_deps\sdl2\installed\SDL2_mixer-2.8.1"
+```
+
+4. 完全关闭并重新打开终端或 Visual Studio，使环境变量生效。
+
 
 ## 构建方式
 
@@ -57,10 +75,57 @@ D:\libs\SDL2-2.32.10\lib\x64
 ### 命令行
 
 ```powershell
-MSBuild.exe touhou_project.sln /p:Configuration=Release /p:Platform=x64 /m
+& "E:\vs2\MSBuild\Current\Bin\MSBuild.exe" "E:\smallgame\touhou_project\touhou_project.sln" /p:Configuration=Release /p:Platform=x64 /m
 ```
 
-如果 `MSBuild.exe` 不在 `PATH` 中，可以从 Visual Studio Developer PowerShell 执行，或使用本机 MSBuild 完整路径。
+如果 `MSBuild.exe` 不在 `PATH` 中，可以从 Visual Studio Developer PowerShell 执行，或改成你本机的 MSBuild 完整路径。
+
+## 运行方式
+
+运行时需要满足两件事：
+
+1. `touhou_project` 目录中的图片、字体和音频资源存在。
+2. SDL 运行时 DLL 可以被程序找到。
+
+当前已验证可直接运行的输出目录是：
+
+- [touhou_project.exe](/E:/smallgame/touhou_project/x64/Release/touhou_project.exe)
+
+如果你是首次在新机器运行，推荐把以下 DLL 复制到 `x64\Release`：
+
+- `SDL2.dll`
+- `SDL2_image.dll`
+- `SDL2_ttf.dll`
+- `SDL2_mixer.dll`
+
+对应来源通常是各自开发包下的 `lib\x64` 目录。
+
+## 常见报错排查
+
+### 1. `SDL2 headers not found`
+
+说明 `SDL2_DIR` 没配好，或目录里缺少 `include\SDL.h`。
+
+优先检查：
+
+```powershell
+$env:SDL2_DIR
+Test-Path "$env:SDL2_DIR\include\SDL.h"
+```
+
+### 2. `SDL_image.h` / `SDL_ttf.h` / `SDL_mixer.h` 找不到
+
+说明对应的 `SDL2_IMAGE_DIR`、`SDL2_TTF_DIR`、`SDL2_MIXER_DIR` 没配好。
+
+### 3. 程序双击后无法启动，提示缺少 DLL
+
+说明运行时 DLL 不在 exe 同目录，也不在系统 `PATH` 中。
+
+最简单的处理方式：把 4 个 `SDL2*.dll` 复制到 `x64\Release`。
+
+### 4. 看到一堆 `override` 或模板报错
+
+先不要直接改代码。这个项目里大多数这类报错都是 SDL 头文件没找到后的连锁错误，先排查 SDL 依赖路径。
 
 ## 运行资源
 
@@ -92,3 +157,4 @@ MSBuild.exe touhou_project.sln /p:Configuration=Release /p:Platform=x64 /m
 - 不要提交个人工程配置文件，例如 `*.user`。
 - 如果本机 SDL 路径不同，优先设置环境变量，不要直接修改 `.vcxproj`。
 - 如果新增资源文件，需要确认它们没有被 `.gitignore` 排除。
+
