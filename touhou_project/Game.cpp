@@ -4,6 +4,13 @@
 #include "MarisaSpellCard.h"
 #include "StageDirector.h"
 #include "StageEvent.h"
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #include <algorithm>
 #include <iostream>
 #include <cstdio>
@@ -21,6 +28,29 @@ constexpr int MaxPowerLevel = 4;
 
 BulletPattern bp;
 
+const char* StateName(State state)
+{
+    switch (state) {
+    case State::MAIN_MENU: return "MAIN_MENU";
+    case State::VOLUME_SETTINGS: return "VOLUME_SETTINGS";
+    case State::HELP: return "HELP";
+    case State::SELECT_CHARACTER: return "SELECT_CHARACTER";
+    case State::DIALOGUE: return "DIALOGUE";
+    case State::PLAYING: return "PLAYING";
+    case State::PAUSED: return "PAUSED";
+    case State::GAME_OVER: return "GAME_OVER";
+    case State::VICTORY: return "VICTORY";
+    default: return "UNKNOWN";
+    }
+}
+
+bool IsEscapeDown(const Uint8* key)
+{
+    bool sdlEscapeDown = key && key[SDL_SCANCODE_ESCAPE];
+    bool nativeEscapeDown = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
+    return sdlEscapeDown || nativeEscapeDown;
+}
+
 // 移除 active=false 的对象。容器元素是 unique_ptr，erase 时会自动释放内存。
 template <typename T>
 void RemoveInactiveObjects(std::vector<std::unique_ptr<T>>& objects)
@@ -33,6 +63,9 @@ void RemoveInactiveObjects(std::vector<std::unique_ptr<T>>& objects)
 }
 
 Game::Game() = default;
+Game::~Game() = default;
+
+
 
 // 加载带透明色键的贴图。
 // 当前主要用于子弹图集：把纯白背景设为透明，再转换为 SDL_Texture。
@@ -130,7 +163,7 @@ bool Game::Init()
 
 void Game::ResetRunState()
 {
-    // ????????????????????????????????
+    // 重置一局战斗内的阶段、计时器和临时效果状态。
     currentPhaseIndex = 0;
     lastPhaseIndex = 0;
     shootTimer = 0.0f;
@@ -198,7 +231,7 @@ void Game::FreeMusic(Mix_Music*& music)
 
 void Game::InitBattle(CharacterID playerID)
 {
-    // ??????????????????????P ?? Boss ???
+    // 开始新战斗前清空旧对象，随后重建玩家、Boss 和阶段配置。
     ClearBattleObjects();
     selectedCharID = playerID;
     pauseMenuSelect = 0;
@@ -252,8 +285,8 @@ void Game::SetupEnemyPhases(CharacterID playerID) {
     p1.dialogueTriggered = false;
     p1.patternType = PatternType::DelayedAim;
     p1.shootInterval = 0.8f;
-    p1.dialogues.push_back({ SystemName, "?????????????", {200,200,200,255} });
-    p1.dialogues.push_back({ bossName, "????????????????", {255,50,50,255} });
+    p1.dialogues.push_back({ SystemName, "警告：检测到防火墙被突破！", {200,200,200,255} });
+    p1.dialogues.push_back({ bossName, "部署加密锁，把你的数据都锁死吧！", {255,50,50,255} });
     enemyPhases.push_back(p1);
 
     EnemyPhase p2;
@@ -261,8 +294,8 @@ void Game::SetupEnemyPhases(CharacterID playerID) {
     p2.dialogueTriggered = false;
     p2.patternType = PatternType::Spiral;
     p2.shootInterval = 0.05f;
-    p2.dialogues.push_back({ SystemName, "??????????", {255,0,0,255} });
-    p2.dialogues.push_back({ bossName, "????????????????", {255,0,0,255} });
+    p2.dialogues.push_back({ SystemName, "严重错误：内核异常！", {255,0,0,255} });
+    p2.dialogues.push_back({ bossName, "格式化所有分区！全！部！删！除！", {255,0,0,255} });
     enemyPhases.push_back(p2);
 }
 
@@ -422,6 +455,21 @@ void Game::HandleEvents()
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_QUIT) is_Running = false;
 
+        if (event.type == SDL_KEYDOWN &&
+            event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
+            std::cout << "[DEBUG] ESC keydown detected. state="
+                << StateName(CurrentState)
+                << ", repeat=" << static_cast<int>(event.key.repeat)
+                << std::endl;
+        }
+
+        if (event.type == SDL_KEYUP &&
+            event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
+            std::cout << "[DEBUG] ESC keyup detected. state="
+                << StateName(CurrentState)
+                << std::endl;
+        }
+
     }
 }
 
@@ -429,6 +477,20 @@ void Game::Update(float DeltaTime)
 {
     const Uint8* key = SDL_GetKeyboardState(NULL);
     static bool keyLock = false;
+    static bool escStateLogged = false;
+    bool escapeDown = IsEscapeDown(key);
+
+    if (escapeDown && !escStateLogged) {
+        std::cout << "[DEBUG] ESC down detected by "
+            << (key[SDL_SCANCODE_ESCAPE] ? "SDL_GetKeyboardState" : "GetAsyncKeyState")
+            << ". state="
+            << StateName(CurrentState)
+            << std::endl;
+        escStateLogged = true;
+    }
+    if (!escapeDown) {
+        escStateLogged = false;
+    }
 
     switch (CurrentState)
     {
@@ -475,13 +537,13 @@ void Game::Update(float DeltaTime)
 
     case State::HELP:
     {
-        if (!keyLock && (key[SDL_SCANCODE_Z] || key[SDL_SCANCODE_ESCAPE])) {
+        if (!keyLock && (key[SDL_SCANCODE_Z] || escapeDown)) {
             CurrentState = State::MAIN_MENU;
             PlaySfx(se_Select);
             keyLock = true;
         }
 
-        if (!key[SDL_SCANCODE_Z] && !key[SDL_SCANCODE_ESCAPE]) {
+        if (!key[SDL_SCANCODE_Z] && !escapeDown) {
             keyLock = false;
         }
         break;
@@ -534,8 +596,8 @@ void Game::Update(float DeltaTime)
             }
 
             // 3. 确认返回
-            if (key[SDL_SCANCODE_Z] || key[SDL_SCANCODE_ESCAPE]) {
-                if (volMenuSelect == 2 || key[SDL_SCANCODE_ESCAPE]) {
+            if (key[SDL_SCANCODE_Z] || escapeDown) {
+                if (volMenuSelect == 2 || escapeDown) {
                     PlaySfx(se_Select);
                     CurrentState = State::MAIN_MENU;
                 }
@@ -546,7 +608,7 @@ void Game::Update(float DeltaTime)
         // 解锁逻辑（确保包含左右键）
         if (!key[SDL_SCANCODE_UP] && !key[SDL_SCANCODE_DOWN] &&
             !key[SDL_SCANCODE_LEFT] && !key[SDL_SCANCODE_RIGHT] &&
-            !key[SDL_SCANCODE_Z] && !key[SDL_SCANCODE_ESCAPE]) {
+            !key[SDL_SCANCODE_Z] && !escapeDown) {
             keyLock = false;
         }
         break;
@@ -564,7 +626,7 @@ void Game::Update(float DeltaTime)
                 menuCursor = 1;
                 PlaySfx(se_Select);
             }
-            if (key[SDL_SCANCODE_ESCAPE]) CurrentState = State::MAIN_MENU;
+            if (escapeDown) CurrentState = State::MAIN_MENU;
             if (key[SDL_SCANCODE_Z]) {
                 PlaySfx(se_Select);
                 selectedCharID = (menuCursor == 0) ? CharacterID::REIMU : CharacterID::MARISA;
@@ -596,7 +658,7 @@ void Game::Update(float DeltaTime)
     case State::PLAYING:
     {
         static bool escPressed = false;
-        if (key[SDL_SCANCODE_ESCAPE]) {
+        if (escapeDown) {
             if (!escPressed) {
                 CurrentState = State::PAUSED;
                 pauseMenuSelect = 0;
@@ -659,7 +721,7 @@ void Game::Update(float DeltaTime)
             powerUpSpawnTimer = 4.0f + (rand() % 20) / 10.0f;
         }
 
-        // ?? Bomb/?????xPressed ???? X ????? Bomb?
+        // 处理 Bomb/符卡输入；xPressed 防止按住 X 时连续释放 Bomb。
         static bool xPressed = false;
         if (key[SDL_SCANCODE_X] && !xPressed && player->CanUseBomb() && !activeSpell) {
             player->ConsumeBomb();
@@ -691,10 +753,10 @@ void Game::Update(float DeltaTime)
             }
         }
 
-        // Boss ?? AI????????????????
+        // Boss 弹幕 AI 更新；胜利判定后会提前跳过。
         UpdateBulletPattern(DeltaTime);
 
-        // ??????
+        // 更新所有战斗对象。
         for (auto& b : playerBullets) b->Update(DeltaTime);
         for (auto& b : enemyBullets) b->Update(DeltaTime);
         for (auto& p : powerUps) p->Update(DeltaTime);
@@ -793,7 +855,7 @@ void Game::Update(float DeltaTime)
         RemoveInactiveObjects(powerUps);
         RemoveInactiveObjects(items);
 
-        // ????????????????????????????
+        // 阶段检测需要在碰撞和对象清理后执行，避免对失效 Boss 误判。
         CheckEnemyPhase();
 
         GameContext ctx{};
@@ -809,7 +871,7 @@ void Game::Update(float DeltaTime)
         }
         lastPhaseIndex = currentPhaseIndex;
 
-        // ????
+        // 胜利处理。
         if (!Enemies.empty() && Enemies[0]->GetBlood() <= 0) {
             const Vector2D& bossPos = Enemies[0]->GetPosition();
             SpawnBossRewardItems(bossPos.x, bossPos.y);
@@ -852,7 +914,7 @@ void Game::Update(float DeltaTime)
                 PlaySfx(se_Select);
                 keyLock = true;
             }
-            else if (key[SDL_SCANCODE_ESCAPE]) {
+            else if (escapeDown) {
                 CurrentState = State::PLAYING;
                 PlaySfx(se_Select);
                 keyLock = true;
@@ -860,7 +922,7 @@ void Game::Update(float DeltaTime)
         }
 
         if (!key[SDL_SCANCODE_UP] && !key[SDL_SCANCODE_DOWN] &&
-            !key[SDL_SCANCODE_Z] && !key[SDL_SCANCODE_ESCAPE]) {
+            !key[SDL_SCANCODE_Z] && !escapeDown) {
             keyLock = false;
         }
         break;
@@ -872,7 +934,7 @@ void Game::Update(float DeltaTime)
         static bool escPressed = false;
         static bool rPressed = false;
 
-        if (key[SDL_SCANCODE_ESCAPE]) {
+        if (escapeDown) {
             if (!escPressed) {
                 CurrentState = State::MAIN_MENU;
                 menuSelect = 0;
@@ -1206,7 +1268,7 @@ void Game::Render()
         for (auto& p : powerUps) if (p->IsActive()) p->Render(cur_Renderer);
         // 渲染新类型道具（Item 多态体系）
         for (auto& item : items) if (item->IsActive()) item->Render(cur_Renderer);
-        // ??????
+        // 符卡演出与名称显示。
         if (activeSpell) {
             SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_BLEND);
             SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 0, 150);
@@ -1224,7 +1286,7 @@ void Game::Render()
                 }
             }
         }
-        // 2. ?? UI (??? Power ??)
+        // 2. 渲染 UI（生命、火力、符卡等）
         if (font && player) {
             // --- [参数定义] ---
             int uiX = 108;           // UI 起始 X 坐标
