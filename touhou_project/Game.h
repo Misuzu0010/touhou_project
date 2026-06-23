@@ -13,6 +13,9 @@
 
 #include "StageDirector.h"  // 关卡事件系统：StageDirector + StageEvent（指南 §3, §6）
 
+// 游戏主状态机。Update 和 Render 会根据该状态分发到不同界面/逻辑。
+//>>>>>>> feature/ui-state-polish
+
 enum class CharacterID { REIMU = 0, MARISA = 1 };
 
 // 单句剧情文本。name 和 Content 使用 UTF-8 字符串，color 用于说话者名称颜色。
@@ -93,6 +96,7 @@ private:
     // 菜单、角色选择和 Boss 阶段控制状态。
     int menuSelect = 0;
     int menuCursor = 0;
+    int pauseMenuSelect = 0;
     CharacterID selectedCharID = CharacterID::REIMU;
     std::vector<EnemyPhase> enemyPhases;
     int currentPhaseIndex = 0;

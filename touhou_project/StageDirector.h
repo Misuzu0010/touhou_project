@@ -10,6 +10,8 @@ enum class State {
     DIALOGUE,
     PLAYING,
     GAME_OVER,
+    PAUSED,
+    HELP,
     VICTORY
 };
 
