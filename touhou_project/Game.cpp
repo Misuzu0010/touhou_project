@@ -1,5 +1,9 @@
 ﻿#pragma execution_character_set("utf-8")  //解决中文不显示问题
 #include "Game.h"
+#include "ReimuSpellCard.h"
+#include "MarisaSpellCard.h"
+#include "StageDirector.h"
+#include "StageEvent.h"
 #include <algorithm>
 #include <iostream>
 #include <cstdio>
@@ -126,17 +130,19 @@ bool Game::Init()
 
 void Game::ResetRunState()
 {
-    // 重置单局战斗相关状态。新开局和重新进入战斗时都应从干净状态开始。
+    // ????????????????????????????????
     currentPhaseIndex = 0;
+    lastPhaseIndex = 0;
     shootTimer = 0.0f;
     enemyShootTimer = 0.5f;
     powerUpSpawnTimer = 1.0f + (rand() % 200) / 100.0f;
     continueTimer = ContinueSeconds;
-    spellTimer = 0.0f;
-    isSpellActive = false;
-    spellUser = selectedCharID;
     shakeTime = 0.0f;
+    angleOffset = 0.0f;
+    enemySeCooldown = 0.0f;
+    activeSpell.reset();
 }
+
 
 void Game::ClearBattleObjects()
 {
@@ -192,19 +198,17 @@ void Game::FreeMusic(Mix_Music*& music)
 
 void Game::InitBattle(CharacterID playerID)
 {
-    // 开始新战斗前先清理上一局遗留对象，避免子弹、P 点或 Boss 残留。
+    // ??????????????????????P ?? Boss ???
     ClearBattleObjects();
     selectedCharID = playerID;
     pauseMenuSelect = 0;
+    activeSpell.reset();
 
     if (tex_PlayerReimu) SDL_SetTextureColorMod(tex_PlayerReimu, 255, 255, 255);
     if (tex_PlayerMarisa) SDL_SetTextureColorMod(tex_PlayerMarisa, 255, 255, 255);
 
-    // 根据玩家选择创建玩家和对手 Boss：灵梦对魔理沙，魔理沙对灵梦。
     if (playerID == CharacterID::REIMU) {
-        // 玩家出生在屏幕下方中央。
         player = std::make_unique<Player>(960.0f, 900.0f, tex_PlayerReimu);
-        // Boss 出生在屏幕上方中央。
         Enemies.push_back(std::make_unique<Enemy>(960.0f, 200.0f, tex_Enemy_Marisa));
     }
     else {
@@ -215,7 +219,9 @@ void Game::InitBattle(CharacterID playerID)
     SetupDialogue(playerID);
     SetupEnemyPhases(playerID);
     ResetRunState();
+    SetupStageDirector();
 }
+
 
 void Game::SetupDialogue(CharacterID playerID) {
     // 开场对话会进入 DIALOGUE 状态；玩家按 Z 读完后回到 PLAYING。
@@ -241,22 +247,129 @@ void Game::SetupEnemyPhases(CharacterID playerID) {
     std::string bossName = (playerID == CharacterID::REIMU) ? "Marisa" : "Reimu";
     std::string SystemName = (playerID == CharacterID::MARISA) ? "Marisa" : "Reimu";
 
-    // 阶段 1：血量降到 4000 以下，切换为锁链弹幕。
     EnemyPhase p1;
-    p1.hpThreshold = 4000;
+    p1.hpThreshold = 4000.0f;
     p1.dialogueTriggered = false;
-    p1.dialogues.push_back({ SystemName, "警告：检测到防火墙被突破！", {200,200,200,255} });
-    p1.dialogues.push_back({ bossName, "部署加密锁，把你的数据都锁死吧！", {255,50,50,255} });
+    p1.patternType = PatternType::DelayedAim;
+    p1.shootInterval = 0.8f;
+    p1.dialogues.push_back({ SystemName, "?????????????", {200,200,200,255} });
+    p1.dialogues.push_back({ bossName, "????????????????", {255,50,50,255} });
     enemyPhases.push_back(p1);
 
-    // 阶段 2：血量降到 2000 以下，切换为高速手里剑弹幕。
     EnemyPhase p2;
-    p2.hpThreshold = 2000;
+    p2.hpThreshold = 2000.0f;
     p2.dialogueTriggered = false;
-    p2.dialogues.push_back({ SystemName, "严重错误：内核异常！", {255,0,0,255} });
-    p2.dialogues.push_back({ bossName, "格式化所有分区！全！部！删！除！", {255,0,0,255} });
+    p2.patternType = PatternType::Spiral;
+    p2.shootInterval = 0.05f;
+    p2.dialogues.push_back({ SystemName, "??????????", {255,0,0,255} });
+    p2.dialogues.push_back({ bossName, "????????????????", {255,0,0,255} });
     enemyPhases.push_back(p2);
 }
+
+void Game::SetupStageDirector()
+{
+    stageDirector = std::make_unique<StageDirector>();
+    stageDirector->Reset();
+
+    auto openingSupply = std::make_unique<TimeEvent>(8.0f);
+    openingSupply->Bind([](GameContext& ctx) {
+        ctx.itemSpawnRequested = true;
+        ctx.itemSpawnX = 960.0f;
+        ctx.itemSpawnY = 180.0f;
+    });
+    stageDirector->AddEvent(std::move(openingSupply));
+
+    auto phaseSupply = std::make_unique<PhaseChangeEvent>(1);
+    phaseSupply->Bind([](GameContext& ctx) {
+        ctx.itemSpawnRequested = true;
+        ctx.itemSpawnX = 960.0f;
+        ctx.itemSpawnY = 220.0f;
+    });
+    stageDirector->AddEvent(std::move(phaseSupply));
+
+    auto lowHpSupply = std::make_unique<HpThresholdEvent>(2000.0f);
+    lowHpSupply->Bind([](GameContext& ctx) {
+        ctx.itemSpawnRequested = true;
+        ctx.itemSpawnX = 960.0f;
+        ctx.itemSpawnY = 260.0f;
+    });
+    stageDirector->AddEvent(std::move(lowHpSupply));
+}
+
+void Game::HandleStageSignals(GameContext& ctx)
+{
+    if (ctx.itemSpawnRequested) {
+        SpawnRandomItem(ctx.itemSpawnX, ctx.itemSpawnY);
+        ctx.itemSpawnRequested = false;
+    }
+}
+
+void Game::SpawnRandomItem(float x, float y)
+{
+    int roll = rand() % 10;
+    if (roll < 2) {
+        items.push_back(std::make_unique<LifeItem>(x, y, tex_PowerUp));
+    } else if (roll < 5) {
+        items.push_back(std::make_unique<BombItem>(x, y, tex_PowerUp));
+    } else {
+        items.push_back(std::make_unique<PowerItem>(x, y, tex_PowerUp));
+    }
+}
+
+void Game::SpawnBossRewardItems(float x, float y)
+{
+    for (int i = 0; i < 3; ++i) {
+        float offsetX = static_cast<float>(rand() % 80 - 40);
+        items.push_back(std::make_unique<BombItem>(x + offsetX, y + static_cast<float>(rand() % 40), tex_PowerUp));
+    }
+    items.push_back(std::make_unique<LifeItem>(x, y, tex_PowerUp));
+}
+
+void Game::UpdateBulletPattern(float DeltaTime)
+{
+    enemyShootTimer -= DeltaTime;
+    enemySeCooldown -= DeltaTime;
+
+    if (Enemies.empty() || !Enemies[0]->IsActive() || enemyShootTimer > 0.0f) {
+        return;
+    }
+
+    PatternType pattern = PatternType::Ring;
+    float shootInterval = 0.5f;
+    if (currentPhaseIndex > 0 && currentPhaseIndex - 1 < static_cast<int>(enemyPhases.size())) {
+        pattern = enemyPhases[currentPhaseIndex - 1].patternType;
+        shootInterval = enemyPhases[currentPhaseIndex - 1].shootInterval;
+    }
+
+    if (enemySeCooldown <= 0.0f) {
+        if (pattern == PatternType::Spiral) {
+            PlaySfx(se_EnemyShoot2);
+            enemySeCooldown = 0.06f;
+        } else {
+            PlaySfx(se_EnemyShoot1);
+            enemySeCooldown = 0.12f;
+        }
+    }
+
+    const Vector2D& enemyPosition = Enemies[0]->GetPosition();
+    switch (pattern) {
+    case PatternType::Ring:
+        bp.ShootRotatingRing(enemyPosition.x, enemyPosition.y, 300, 36, angleOffset, enemyBullets, BulletType::VIRUS);
+        angleOffset += 0.1f;
+        break;
+    case PatternType::DelayedAim:
+        bp.ShootStopAndGo(enemyPosition.x, enemyPosition.y, 1.0f, 600, player.get(), 24, enemyBullets, BulletType::LOCK);
+        angleOffset -= 0.15f;
+        break;
+    case PatternType::Spiral:
+        angleOffset += 0.5f;
+        bp.ShootSpiral(enemyPosition.x, enemyPosition.y, 500, angleOffset, 5, 0.2f, enemyBullets, BulletType::SHURIKEN);
+        break;
+    }
+
+    enemyShootTimer = shootInterval;
+}
+
 
 // 检查 Boss 是否进入下一个血量阶段；触发阶段时暂停战斗并清屏敌弹。
 void Game::CheckEnemyPhase() {
@@ -546,99 +659,42 @@ void Game::Update(float DeltaTime)
             powerUpSpawnTimer = 4.0f + (rand() % 20) / 10.0f;
         }
 
-        // 处理 Bomb/符卡触发。xPressed 防止长按 X 时重复消耗 Bomb。
+        // ?? Bomb/?????xPressed ???? X ????? Bomb?
         static bool xPressed = false;
-        if (key[SDL_SCANCODE_X] && !xPressed && player->CanUseBomb() && !isSpellActive) {
+        if (key[SDL_SCANCODE_X] && !xPressed && player->CanUseBomb() && !activeSpell) {
             player->ConsumeBomb();
-            isSpellActive = true;
-            spellTimer = 3.0f; // 符卡持续3秒
-            spellUser = selectedCharID;
 
-            player->SetInvincible(3.5f); // 无敌略长于符卡
+            SpellContext ctx;
+            ctx.enemyBullets = &enemyBullets;
+            ctx.boss = Enemies.empty() ? nullptr : Enemies[0].get();
+            ctx.player = player.get();
+            ctx.renderer = cur_Renderer;
 
-            if (se_REIMUBomb && spellUser == CharacterID::REIMU) PlaySfx(se_REIMUBomb);
-            if (se_MARISABomb && spellUser == CharacterID::MARISA) PlaySfx(se_MARISABomb);
+            if (selectedCharID == CharacterID::REIMU) {
+                activeSpell = std::make_unique<ReimuSpellCard>(ctx);
+                if (se_REIMUBomb) PlaySfx(se_REIMUBomb);
+            }
+            else {
+                activeSpell = std::make_unique<MarisaSpellCard>(ctx);
+                if (se_MARISABomb) PlaySfx(se_MARISABomb);
+            }
+
+            activeSpell->Activate();
             xPressed = true;
         }
         if (!key[SDL_SCANCODE_X]) xPressed = false;
-        if (!key[SDL_SCANCODE_X]) xPressed = false;
 
-        if (isSpellActive) {
-            spellTimer -= DeltaTime;
-
-            // 持续消弹：符卡期间任何接触到特效区域的子弹都会消失
-            for (auto& b : enemyBullets) {
-                if (spellUser == CharacterID::MARISA) {
-                    // 魔理沙：激光范围内的子弹消失
-                    if (abs(b->GetPosition().x - player->GetPosition().x) < 100) b->Deactivate();
-                }
-                else {
-                    // 灵梦：全屏缓慢消弹
-                    b->Deactivate();
-                }
-            }
-
-            // 持续伤害
-            for (auto& e : Enemies) {
-                if (e->IsActive()) e->hit(10); // 每帧造成小额伤害，累计很高
-            }
-
-            if (spellTimer <= 0) isSpellActive = false;
-        }
-
-        // Boss 弹幕 AI：根据 currentPhaseIndex 选择攻击模式。
-        enemyShootTimer -= DeltaTime;
-        static float angleOffset = 0; // 用于让弹幕旋转起来
-        static float enemySeCooldown = 0.0f;
-        enemySeCooldown -= DeltaTime;
-       
-        if (!Enemies.empty() && Enemies[0]->IsActive()) {
-            if (enemyShootTimer <= 0) {
-                // currentPhaseIndex：0 初始圆环弹，1 锁链追踪弹，2 低血量高速螺旋弹。
-                if (enemySeCooldown <= 0) {
-                    if (currentPhaseIndex >= 2 || Enemies[0]->GetBlood() < 2000) {
-                        // 播放阶段 2 专属的高频/暴走音效
-                        PlaySfx(se_EnemyShoot2);
-                        enemySeCooldown = 0.06f; // 阶段 2 射速极快，冷却缩短以配合节奏
-                    }
-                    else {
-                        // 播放阶段 0 和 1 的常规攻击音效
-                        PlaySfx(se_EnemyShoot1);
-                        enemySeCooldown = 0.12f; // 普通阶段冷却稍长，听感更清晰
-                    }
-                }
-
-                // 阶段 0：病毒圆环弹，0.5 秒一波。
-                if (currentPhaseIndex == 0) {
-                    const Vector2D& enemyPosition = Enemies[0]->GetPosition();
-                    bp.ShootRotatingRing(enemyPosition.x, enemyPosition.y, 300, 36, angleOffset, enemyBullets, BulletType::VIRUS);
-
-                    angleOffset += 0.1f; // 缓慢旋转
-                    enemyShootTimer = 0.5f;
-
-                }
-                // 阶段 1：锁链弹先展开再瞄准玩家，间隔较长。
-                else if (currentPhaseIndex == 1) {
-                    const Vector2D& enemyPosition = Enemies[0]->GetPosition();
-                    bp.ShootStopAndGo(enemyPosition.x, enemyPosition.y, 1.0f, 600, player.get(), 24, enemyBullets, BulletType::LOCK);
-
-                    angleOffset -= 0.15f; // 反向旋转
-                    enemyShootTimer = 0.8f; // 这种强力弹幕间隔长一点
-
-                }
-                // 阶段 2：高速手里剑螺旋弹，0.05 秒一轮。
-                else if (currentPhaseIndex >= 2 || Enemies[0]->GetBlood() < 2000) {
-                    angleOffset += 0.5f;
-
-                    const Vector2D& enemyPosition = Enemies[0]->GetPosition();
-                    bp.ShootSpiral(enemyPosition.x, enemyPosition.y, 500, angleOffset, 5, 0.2f, enemyBullets, BulletType::SHURIKEN);
-
-                    enemyShootTimer = 0.05f;
-                }
+        if (activeSpell) {
+            activeSpell->Update(DeltaTime);
+            if (activeSpell->IsFinished()) {
+                activeSpell.reset();
             }
         }
 
-        // 更新所有对象
+        // Boss ?? AI????????????????
+        UpdateBulletPattern(DeltaTime);
+
+        // ??????
         for (auto& b : playerBullets) b->Update(DeltaTime);
         for (auto& b : enemyBullets) b->Update(DeltaTime);
         for (auto& p : powerUps) p->Update(DeltaTime);
@@ -668,8 +724,7 @@ void Game::Update(float DeltaTime)
 
                 if (player->Dead_judge()) {
                     // 残机小于 0，彻底游戏结束
-                    isSpellActive = false;
-                    spellTimer = 0.0f;
+                    activeSpell.reset();
                     shakeTime = 0.0f;
                     Mix_HaltMusic();    // 停止背景音乐
                     continueTimer = ContinueSeconds;
@@ -738,25 +793,30 @@ void Game::Update(float DeltaTime)
         RemoveInactiveObjects(powerUps);
         RemoveInactiveObjects(items);
 
-        // 对象清理后再检查阶段，避免阶段切换对话中残留已失效实体。
+        // ????????????????????????????
         CheckEnemyPhase();
 
-        // 胜利判定
-        if (!Enemies.empty() && Enemies[0]->GetBlood() <= 0) {
-            // Boss 击杀时掉落一批高品质道具（Bomb + Life）
-            const Vector2D& bossPos = Enemies[0]->GetPosition();
-            for (int i = 0; i < 3; i++) {
-                float offsetX = (float)(rand() % 80 - 40);
-                items.push_back(std::make_unique<BombItem>(bossPos.x + offsetX, bossPos.y + (float)(rand() % 40), tex_PowerUp));
-            }
-            // 必定掉落 1 个残机道具作为击杀奖励
-            items.push_back(std::make_unique<LifeItem>(bossPos.x, bossPos.y, tex_PowerUp));
+        GameContext ctx{};
+        ctx.isPlaying = (CurrentState == State::PLAYING);
+        ctx.hasBoss = !Enemies.empty() && Enemies[0]->IsActive();
+        ctx.bossHp = ctx.hasBoss ? Enemies[0]->GetBlood() : 0.0f;
+        ctx.playerDefeated = player ? player->Dead_judge() : false;
+        ctx.phaseIndex = currentPhaseIndex;
+        ctx.phaseChanged = (currentPhaseIndex != lastPhaseIndex);
+        if (stageDirector) {
+            stageDirector->Update(DeltaTime, ctx);
+            HandleStageSignals(ctx);
+        }
+        lastPhaseIndex = currentPhaseIndex;
 
-            PlaySfx(se_Victory); // 胜利音效
-            Mix_HaltMusic(); // 停止战斗BGM
+        // ????
+        if (!Enemies.empty() && Enemies[0]->GetBlood() <= 0) {
+            const Vector2D& bossPos = Enemies[0]->GetPosition();
+            SpawnBossRewardItems(bossPos.x, bossPos.y);
+            PlaySfx(se_Victory);
+            Mix_HaltMusic();
             CurrentState = State::VICTORY;
-            isSpellActive = false;
-            spellTimer = 0.0f;
+            activeSpell.reset();
             shakeTime = 0.0f;
         }
         break;
@@ -1146,60 +1206,25 @@ void Game::Render()
         for (auto& p : powerUps) if (p->IsActive()) p->Render(cur_Renderer);
         // 渲染新类型道具（Item 多态体系）
         for (auto& item : items) if (item->IsActive()) item->Render(cur_Renderer);
-        // 符卡演出层。
-        if (isSpellActive) {
-            // --- [1. 背景变暗] ---
+        // ??????
+        if (activeSpell) {
             SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_BLEND);
             SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 0, 150);
             SDL_Rect full = { 0, 0, 1920, 1080 };
             SDL_RenderFillRect(cur_Renderer, &full);
+            activeSpell->Render(cur_Renderer);
 
-            // --- [2. 特效绘制] ---
-            if (spellUser == CharacterID::REIMU) {
-                // 灵梦：灵符「梦想封印」
-                // 绘制 8 个巨大的彩色光玉环绕
-                for (int i = 0; i < 8; i++) {
-                    float angle = (spellTimer * 4.0f) + (i * 0.785f);
-                    float dist = 300.0f - (spellTimer * 50.0f); // 逐渐向中心收缩
-                    const Vector2D& playerPosition = player->GetPosition();
-                    int tx = static_cast<int>(playerPosition.x + std::cos(angle) * dist);
-                    int ty = static_cast<int>(playerPosition.y + std::sin(angle) * dist);
-
-                    SDL_SetRenderDrawColor(cur_Renderer, 255, 100, 200, 180);
-                    SDL_Rect orb = { tx - 60, ty - 60, 120, 120 };
-                    SDL_RenderFillRect(cur_Renderer, &orb); // 当前用矩形占位表现光玉效果。
+            if (font) {
+                SDL_Surface* sSurf = TTF_RenderUTF8_Blended(font, activeSpell->GetName(), { 255, 255, 255, 255 });
+                if (sSurf) {
+                    SDL_Texture* sTex = SDL_CreateTextureFromSurface(cur_Renderer, sSurf);
+                    SDL_Rect sRect = { 1320, 150, sSurf->w, sSurf->h };
+                    SDL_RenderCopy(cur_Renderer, sTex, NULL, &sRect);
+                    SDL_FreeSurface(sSurf); SDL_DestroyTexture(sTex);
                 }
             }
-            else if (spellUser == CharacterID::MARISA) {
-                // 魔理沙：恋符「Master Spark」
-                SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_ADD); // 加法混合，超亮！
-                int offsetX = (shakeTime > 0) ? (rand() % 10 - 5) : 0;
-                const Vector2D& playerPosition = player->GetPosition();
-
-                // 激光外壳
-                SDL_SetRenderDrawColor(cur_Renderer, 100, 100, 255, 200);
-                SDL_Rect beamAura = { (int)playerPosition.x - 120 + offsetX, 0, 240, (int)playerPosition.y };
-                SDL_RenderFillRect(cur_Renderer, &beamAura);
-
-                // 激光核心
-                SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 255, 255);
-                SDL_Rect beamCore = { (int)playerPosition.x - 70 + offsetX, 0, 140, (int)playerPosition.y };
-                SDL_RenderFillRect(cur_Renderer, &beamCore);
-                SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_BLEND);
-            }
-
-            // --- [3. 符卡名称宣示] ---
-            std::string sName = (spellUser == CharacterID::REIMU) ? "灵符「梦想封印」" : "恋符「Master Spark」";
-            SDL_Surface* sSurf = TTF_RenderUTF8_Blended(font, sName.c_str(), { 255, 255, 255, 255 });
-            if (sSurf) {
-                SDL_Texture* sTex = SDL_CreateTextureFromSurface(cur_Renderer, sSurf);
-                // 名称从右侧滑入
-                SDL_Rect sRect = { 1800 - (int)((3.0f - spellTimer) * 400), 150, sSurf->w, sSurf->h };
-                SDL_RenderCopy(cur_Renderer, sTex, NULL, &sRect);
-                SDL_FreeSurface(sSurf); SDL_DestroyTexture(sTex);
-            }
         }
-        // 2. 绘制 UI (残机与 Power 展示)
+        // 2. ?? UI (??? Power ??)
         if (font && player) {
             // --- [参数定义] ---
             int uiX = 108;           // UI 起始 X 坐标
