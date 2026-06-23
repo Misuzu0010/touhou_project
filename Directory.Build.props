@@ -10,4 +10,10 @@
     <SDL2_TTF_DIR Condition="'$(SDL2_TTF_DIR)' == ''">D:\SDL_ttf\SDL2_ttf-2.24.0</SDL2_TTF_DIR>
     <SDL2_MIXER_DIR Condition="'$(SDL2_MIXER_DIR)' == ''">D:\SDL_Mixer\SDL2_mixer-2.8.1</SDL2_MIXER_DIR>
   </PropertyGroup>
+  <Target Name="ValidateLocalDependencies" BeforeTargets="ClCompile">
+    <Error Condition="!Exists('$(SDL2_DIR)\include\SDL.h')" Text="SDL2 headers not found. Set SDL2_DIR to a valid SDL2 root that contains include\SDL.h." />
+    <Error Condition="!Exists('$(SDL2_IMAGE_DIR)\include\SDL_image.h')" Text="SDL2_image headers not found. Set SDL2_IMAGE_DIR to a valid SDL2_image root that contains include\SDL_image.h." />
+    <Error Condition="!Exists('$(SDL2_TTF_DIR)\include\SDL_ttf.h')" Text="SDL2_ttf headers not found. Set SDL2_TTF_DIR to a valid SDL2_ttf root that contains include\SDL_ttf.h." />
+    <Error Condition="!Exists('$(SDL2_MIXER_DIR)\include\SDL_mixer.h')" Text="SDL2_mixer headers not found. Set SDL2_MIXER_DIR to a valid SDL2_mixer root that contains include\SDL_mixer.h." />
+  </Target>
 </Project>
