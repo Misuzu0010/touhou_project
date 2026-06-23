@@ -140,6 +140,9 @@
     <ClCompile Include="Bullet.cpp" />
     <ClCompile Include="Game.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="SpellCard.cpp" />
+    <ClCompile Include="ReimuSpellCard.cpp" />
+    <ClCompile Include="MarisaSpellCard.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Bullet.h" />
@@ -150,6 +153,9 @@
     <ClInclude Include="Player.h" />
     <ClInclude Include="PowerUp.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="SpellCard.h" />
+    <ClInclude Include="ReimuSpellCard.h" />
+    <ClInclude Include="MarisaSpellCard.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="touhou_project.rc" />
