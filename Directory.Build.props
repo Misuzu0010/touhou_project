@@ -5,10 +5,10 @@
       协作者可以通过同名环境变量覆盖这些默认路径。
       示例：setx SDL2_DIR "D:\libs\SDL2-2.32.10"
     -->
-    <SDL2_DIR Condition="'$(SDL2_DIR)' == ''">D:\SDL2-devel-2.32.10-VC\SDL2-2.32.10</SDL2_DIR>
-    <SDL2_IMAGE_DIR Condition="'$(SDL2_IMAGE_DIR)' == ''">D:\SDL2_image-devel-2.8.5-VC\SDL2_image-2.8.5</SDL2_IMAGE_DIR>
-    <SDL2_TTF_DIR Condition="'$(SDL2_TTF_DIR)' == ''">D:\SDL_ttf\SDL2_ttf-2.24.0</SDL2_TTF_DIR>
-    <SDL2_MIXER_DIR Condition="'$(SDL2_MIXER_DIR)' == ''">D:\SDL_Mixer\SDL2_mixer-2.8.1</SDL2_MIXER_DIR>
+    <SDL2_DIR Condition="'$(SDL2_DIR)' == ''">$(MSBuildThisFileDirectory)..\_deps\sdl2\installed\SDL2-2.32.10</SDL2_DIR>
+    <SDL2_IMAGE_DIR Condition="'$(SDL2_IMAGE_DIR)' == ''">$(MSBuildThisFileDirectory)..\_deps\sdl2\installed\SDL2_image-2.8.5</SDL2_IMAGE_DIR>
+    <SDL2_TTF_DIR Condition="'$(SDL2_TTF_DIR)' == ''">$(MSBuildThisFileDirectory)..\_deps\sdl2\installed\SDL2_ttf-2.24.0</SDL2_TTF_DIR>
+    <SDL2_MIXER_DIR Condition="'$(SDL2_MIXER_DIR)' == ''">$(MSBuildThisFileDirectory)..\_deps\sdl2\installed\SDL2_mixer-2.8.1</SDL2_MIXER_DIR>
   </PropertyGroup>
   <Target Name="ValidateLocalDependencies" BeforeTargets="ClCompile">
     <Error Condition="!Exists('$(SDL2_DIR)\include\SDL.h')" Text="SDL2 headers not found. Set SDL2_DIR to a valid SDL2 root that contains include\SDL.h." />

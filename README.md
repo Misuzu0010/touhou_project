@@ -34,6 +34,15 @@
 - `SDL2_TTF_DIR`
 - `SDL2_MIXER_DIR`
 
+如果没有手动设置环境变量，仓库默认会去找下面这组本地目录：
+
+```text
+E:\smallgame\_deps\sdl2\installed\SDL2-2.32.10
+E:\smallgame\_deps\sdl2\installed\SDL2_image-2.8.5
+E:\smallgame\_deps\sdl2\installed\SDL2_ttf-2.24.0
+E:\smallgame\_deps\sdl2\installed\SDL2_mixer-2.8.1
+```
+
 每个目录都必须包含对应的 `include` 和 `lib\x64` 子目录，例如：
 
 ```text
@@ -50,8 +59,8 @@ E:\smallgame\_deps\sdl2\installed\SDL2-2.32.10\lib\x64
    - `SDL2_image-devel-2.8.5-VC.zip`
    - `SDL2_ttf-devel-2.24.0-VC.zip`
    - `SDL2_mixer-devel-2.8.1-VC.zip`
-2. 解压到任意固定目录，例如：`E:\smallgame\_deps\sdl2\installed`
-3. 设置环境变量：
+2. 解压到固定目录，例如：`E:\smallgame\_deps\sdl2\installed`
+3. 如果你想让任意新终端都能编译，再执行：
 
 ```powershell
 setx SDL2_DIR "E:\smallgame\_deps\sdl2\installed\SDL2-2.32.10"
@@ -61,7 +70,6 @@ setx SDL2_MIXER_DIR "E:\smallgame\_deps\sdl2\installed\SDL2_mixer-2.8.1"
 ```
 
 4. 完全关闭并重新打开终端或 Visual Studio，使环境变量生效。
-
 
 ## 构建方式
 
@@ -79,6 +87,27 @@ setx SDL2_MIXER_DIR "E:\smallgame\_deps\sdl2\installed\SDL2_mixer-2.8.1"
 ```
 
 如果 `MSBuild.exe` 不在 `PATH` 中，可以从 Visual Studio Developer PowerShell 执行，或改成你本机的 MSBuild 完整路径。
+
+## 怎么打开游戏
+
+### 方式一：直接打开已编译好的 exe
+
+如果你已经编译成功，直接双击下面这个文件即可：
+
+- [touhou_project.exe](/E:/smallgame/touhou_project/x64/Release/touhou_project.exe)
+
+也可以在 PowerShell 里执行：
+
+```powershell
+& "E:\smallgame\touhou_project\x64\Release\touhou_project.exe"
+```
+
+### 方式二：在 Visual Studio 里启动
+
+1. 打开 `touhou_project.sln`
+2. 选择 `x64` 和 `Release`
+3. 右键 `touhou_project` 项目，设为启动项目
+4. 按 `Ctrl + F5` 或点“开始执行(不调试)”
 
 ## 运行方式
 
@@ -99,6 +128,13 @@ setx SDL2_MIXER_DIR "E:\smallgame\_deps\sdl2\installed\SDL2_mixer-2.8.1"
 - `SDL2_mixer.dll`
 
 对应来源通常是各自开发包下的 `lib\x64` 目录。
+
+当前这台机器已经验证过，可直接运行所需 DLL 为：
+
+- `E:\smallgame\touhou_project\x64\Release\SDL2.dll`
+- `E:\smallgame\touhou_project\x64\Release\SDL2_image.dll`
+- `E:\smallgame\touhou_project\x64\Release\SDL2_ttf.dll`
+- `E:\smallgame\touhou_project\x64\Release\SDL2_mixer.dll`
 
 ## 常见报错排查
 
@@ -157,4 +193,3 @@ Test-Path "$env:SDL2_DIR\include\SDL.h"
 - 不要提交个人工程配置文件，例如 `*.user`。
 - 如果本机 SDL 路径不同，优先设置环境变量，不要直接修改 `.vcxproj`。
 - 如果新增资源文件，需要确认它们没有被 `.gitignore` 排除。
-
