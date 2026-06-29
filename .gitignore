@@ -384,3 +384,6 @@ $RECYCLE.BIN/
 *.dmp
 *.mdmp
 *.stackdump
+
+# Local generated outputs and packaged builds
+outputs/

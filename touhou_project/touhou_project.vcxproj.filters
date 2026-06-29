@@ -47,6 +47,12 @@
     <ClInclude Include="BulletPattern.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="BulletStrategy.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="GameTypes.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="Player.h">
       <Filter>头文件</Filter>
     </ClInclude>

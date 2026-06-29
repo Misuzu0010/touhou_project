@@ -8,8 +8,8 @@
 #include "Player.h"
 #include "Enemy.h"
 #include "Bullet.h"
-#include "BulletPattern.h"
 #include "PowerUp.h"
+#include "GameTypes.h"
 #include "SpellCard.h"
 #include "Item.h"
 #include "PowerItem.h"
@@ -28,30 +28,6 @@ enum class State {
     PAUSED,
     GAME_OVER,
     VICTORY
-};
-
-enum class CharacterID { REIMU = 0, MARISA = 1 };
-
-enum class PatternType {
-    Ring,
-    DelayedAim,
-    Spiral
-};
-
-// 单行对话数据：name 和 Content 使用 UTF-8 文本，color 控制说话人颜色。
-struct DialogueLine {
-    std::string name;
-    std::string Content;
-    SDL_Color color;
-};
-
-// Boss 血量阶段配置：hpThreshold 触发阶段，dialogues 存放阶段对话。
-struct EnemyPhase {
-    float hpThreshold = 0.0f;
-    bool dialogueTriggered = false;
-    PatternType patternType = PatternType::Ring;
-    float shootInterval = 0.5f;
-    std::vector<DialogueLine> dialogues;
 };
 
 // Game 管理 SDL 资源、游戏对象、状态流转和主循环。
@@ -85,6 +61,8 @@ private:
     SDL_Texture* tex_PowerUp = nullptr;
     SDL_Texture* tex_BackgroundMenu = nullptr;
     SDL_Texture* tex_BackgroundBattle = nullptr;
+    SDL_Texture* tex_BombReimu = nullptr;
+    SDL_Texture* tex_BombMarisa = nullptr;
 
     // 用于菜单、对话和战斗 UI 的字体资源。
     TTF_Font* font = nullptr;
@@ -121,21 +99,36 @@ private:
     int menuCursor = 0;
     int pauseMenuSelect = 0;
     CharacterID selectedCharID = CharacterID::REIMU;
-    std::vector<EnemyPhase> enemyPhases;
-    int currentPhaseIndex = 0;
     int lastPhaseIndex = 0;
     State stateBeforeDialogue = State::PLAYING;
 
-    // 各类计时器：射击、掉落、续关、屏幕震动和音效冷却。
+    // 各类计时器：射击、掉落、续关和屏幕震动。
     Uint32 lastTime = 0;
     float shootTimer = 0.0f;
-    float enemyShootTimer = 0.0f;
     float powerUpSpawnTimer = 0.0f;
     float powerUpSpawnInterval = 3.0f;
     float continueTimer = 10.0f;
     float shakeTime = 0.0f;
-    float angleOffset = 0.0f;
-    float enemySeCooldown = 0.0f;
+    bool isSpellActive = false;
+    float spellTimer = 0.0f;
+    CharacterID spellUser = CharacterID::REIMU;
+
+    // 灵梦 Bomb 的 8 个追踪光玉，来自 enemy-pattern 分支的符卡表现逻辑。
+    struct ReimuOrb {
+        float angle = 0.0f;
+        float x = 0.0f;
+        float y = 0.0f;
+        float spawnDelay = 0.0f;
+        float speed = 900.0f;
+        bool spawned = false;
+        bool launched = false;
+        bool alive = true;
+    };
+    std::vector<ReimuOrb> reimuOrbs;
+    float orbSpawnTimer = 0.0f;
+    int orbSpawnIndex = 0;
+    bool orbAllSpawned = false;
+    bool orbAllLaunched = false;
 
     void HandleEvents();
     void Update(float DeltaTime);
@@ -143,13 +136,11 @@ private:
 
     void InitBattle(CharacterID playerID);
     void SetupDialogue(CharacterID playerID);
-    void SetupEnemyPhases(CharacterID playerID);
     void SetupStageDirector();
     void CheckEnemyPhase();
     void HandleStageSignals(GameContext& ctx);
     void SpawnRandomItem(float x, float y);
     void SpawnBossRewardItems(float x, float y);
-    void UpdateBulletPattern(float DeltaTime);
 
     // 运行状态、对象清理和资源释放辅助函数。
     void ResetRunState();

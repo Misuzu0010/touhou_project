@@ -12,6 +12,7 @@
 #endif
 #include <windows.h>
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <cstdio>
 #include <cstdlib>
@@ -25,8 +26,6 @@ constexpr int ScreenHeight = 1080;
 constexpr float ContinueSeconds = 10.0f;
 constexpr int MaxVolume = 128;
 constexpr int MaxPowerLevel = 4;
-
-BulletPattern bp;
 
 const char* StateName(State state)
 {
@@ -112,18 +111,20 @@ bool Game::Init()
     if (!cur_Window || !cur_Renderer) return false;
 
     // 角色贴图：玩家使用背身图，Boss 使用正面图。
-    tex_PlayerReimu = IMG_LoadTexture(cur_Renderer, "Reimu.png");
-    tex_PlayerMarisa = IMG_LoadTexture(cur_Renderer, "Marisa.png");
-    tex_Enemy_Reimu = IMG_LoadTexture(cur_Renderer, "Reimu_Enemy.png");
-    tex_Enemy_Marisa = IMG_LoadTexture(cur_Renderer, "Marisa_Enemy.png");
+    tex_PlayerReimu = IMG_LoadTexture(cur_Renderer, "assets/image/Reimu.png");
+    tex_PlayerMarisa = IMG_LoadTexture(cur_Renderer, "assets/image/Marisa.png");
+    tex_Enemy_Reimu = IMG_LoadTexture(cur_Renderer, "assets/image/Reimu_Enemy.png");
+    tex_Enemy_Marisa = IMG_LoadTexture(cur_Renderer, "assets/image/Marisa_Enemy.png");
 
     // 子弹图集使用色键处理透明背景；P 点复用玩家子弹图集。
-    tex_PlayerBullet = LoadTextureWithColorKey("PlayerBullet.png");
-    tex_EnemyBullet = LoadTextureWithColorKey("EnemyBullet.png");
+    tex_PlayerBullet = LoadTextureWithColorKey("assets/image/PlayerBullet.png");
+    tex_EnemyBullet = LoadTextureWithColorKey("assets/image/EnemyBullet.png");
     tex_PowerUp = tex_PlayerBullet; // 复用
     // 背景图：菜单/选择界面和战斗界面分别使用不同背景。
-    tex_BackgroundMenu = IMG_LoadTexture(cur_Renderer, "TitleBg.png");
-    tex_BackgroundBattle = IMG_LoadTexture(cur_Renderer, "BattleBg.png");
+    tex_BackgroundMenu = IMG_LoadTexture(cur_Renderer, "assets/image/TitleBg.png");
+    tex_BackgroundBattle = IMG_LoadTexture(cur_Renderer, "assets/image/BattleBg.png");
+    tex_BombReimu = IMG_LoadTexture(cur_Renderer, "assets/image/Reimu_b.png");
+    tex_BombMarisa = IMG_LoadTexture(cur_Renderer, "assets/image/Marisa_b.png");
 
     // 字体用于所有中文 UI 文本，路径相对于运行目录。
     font = TTF_OpenFont("assets\\fonts\\SimHei.ttf", 24);
@@ -164,16 +165,20 @@ bool Game::Init()
 void Game::ResetRunState()
 {
     // 重置一局战斗内的阶段、计时器和临时效果状态。
-    currentPhaseIndex = 0;
     lastPhaseIndex = 0;
     shootTimer = 0.0f;
-    enemyShootTimer = 0.5f;
     powerUpSpawnTimer = 1.0f + (rand() % 200) / 100.0f;
     continueTimer = ContinueSeconds;
     shakeTime = 0.0f;
-    angleOffset = 0.0f;
-    enemySeCooldown = 0.0f;
     activeSpell.reset();
+    isSpellActive = false;
+    spellTimer = 0.0f;
+    spellUser = selectedCharID;
+    reimuOrbs.clear();
+    orbSpawnTimer = 0.0f;
+    orbSpawnIndex = 0;
+    orbAllSpawned = false;
+    orbAllLaunched = false;
 }
 
 
@@ -250,7 +255,9 @@ void Game::InitBattle(CharacterID playerID)
     }
 
     SetupDialogue(playerID);
-    SetupEnemyPhases(playerID);
+    if (!Enemies.empty()) {
+        Enemies[0]->SetupPhases(playerID);
+    }
     ResetRunState();
     SetupStageDirector();
 }
@@ -274,31 +281,6 @@ void Game::SetupDialogue(CharacterID playerID) {
         DialoueQueue.push_back({ "Reimu", "那就由我来给你打个补丁吧！", {255,100,100,255} });
     }
 }
-// 配置 Boss 血量阶段。阶段触发后会进入剧情对话，并在 CheckEnemyPhase 中清空敌弹。
-void Game::SetupEnemyPhases(CharacterID playerID) {
-    enemyPhases.clear();
-    std::string bossName = (playerID == CharacterID::REIMU) ? "Marisa" : "Reimu";
-    std::string SystemName = (playerID == CharacterID::MARISA) ? "Marisa" : "Reimu";
-
-    EnemyPhase p1;
-    p1.hpThreshold = 4000.0f;
-    p1.dialogueTriggered = false;
-    p1.patternType = PatternType::DelayedAim;
-    p1.shootInterval = 0.8f;
-    p1.dialogues.push_back({ SystemName, "警告：检测到防火墙被突破！", {200,200,200,255} });
-    p1.dialogues.push_back({ bossName, "部署加密锁，把你的数据都锁死吧！", {255,50,50,255} });
-    enemyPhases.push_back(p1);
-
-    EnemyPhase p2;
-    p2.hpThreshold = 2000.0f;
-    p2.dialogueTriggered = false;
-    p2.patternType = PatternType::Spiral;
-    p2.shootInterval = 0.05f;
-    p2.dialogues.push_back({ SystemName, "严重错误：内核异常！", {255,0,0,255} });
-    p2.dialogues.push_back({ bossName, "格式化所有分区！全！部！删！除！", {255,0,0,255} });
-    enemyPhases.push_back(p2);
-}
-
 void Game::SetupStageDirector()
 {
     stageDirector = std::make_unique<StageDirector>();
@@ -358,78 +340,24 @@ void Game::SpawnBossRewardItems(float x, float y)
     items.push_back(std::make_unique<LifeItem>(x, y, tex_PowerUp));
 }
 
-void Game::UpdateBulletPattern(float DeltaTime)
-{
-    enemyShootTimer -= DeltaTime;
-    enemySeCooldown -= DeltaTime;
-
-    if (Enemies.empty() || !Enemies[0]->IsActive() || enemyShootTimer > 0.0f) {
-        return;
-    }
-
-    PatternType pattern = PatternType::Ring;
-    float shootInterval = 0.5f;
-    if (currentPhaseIndex > 0 && currentPhaseIndex - 1 < static_cast<int>(enemyPhases.size())) {
-        pattern = enemyPhases[currentPhaseIndex - 1].patternType;
-        shootInterval = enemyPhases[currentPhaseIndex - 1].shootInterval;
-    }
-
-    if (enemySeCooldown <= 0.0f) {
-        if (pattern == PatternType::Spiral) {
-            PlaySfx(se_EnemyShoot2);
-            enemySeCooldown = 0.06f;
-        } else {
-            PlaySfx(se_EnemyShoot1);
-            enemySeCooldown = 0.12f;
-        }
-    }
-
-    const Vector2D& enemyPosition = Enemies[0]->GetPosition();
-    switch (pattern) {
-    case PatternType::Ring:
-        bp.ShootRotatingRing(enemyPosition.x, enemyPosition.y, 300, 36, angleOffset, enemyBullets, BulletType::VIRUS);
-        angleOffset += 0.1f;
-        break;
-    case PatternType::DelayedAim:
-        bp.ShootStopAndGo(enemyPosition.x, enemyPosition.y, 1.0f, 600, player.get(), 24, enemyBullets, BulletType::LOCK);
-        angleOffset -= 0.15f;
-        break;
-    case PatternType::Spiral:
-        angleOffset += 0.5f;
-        bp.ShootSpiral(enemyPosition.x, enemyPosition.y, 500, angleOffset, 5, 0.2f, enemyBullets, BulletType::SHURIKEN);
-        break;
-    }
-
-    enemyShootTimer = shootInterval;
-}
-
-
-// 检查 Boss 是否进入下一个血量阶段；触发阶段时暂停战斗并清屏敌弹。
+// 检查 Boss 是否进入下一个符卡阶段；触发阶段时暂停战斗并清屏敌弹。
 void Game::CheckEnemyPhase() {
     if (Enemies.empty()) return;
-    float hp = Enemies[0]->GetBlood();
 
-    // 从 currentPhaseIndex 开始检查，避免已触发阶段被重复处理。
-    for (int i = currentPhaseIndex; i < enemyPhases.size(); ++i) {
-        if (hp <= enemyPhases[i].hpThreshold && !enemyPhases[i].dialogueTriggered) {
+    Enemy& boss = *Enemies[0];
+    boss.UpdatePhase();
+    if (boss.HasPhaseTransition()) {
+        // 阶段对话结束后会恢复到触发前的游戏状态。
+        DialoueQueue = boss.GetTransitionDialogues();
+        cur_index = 0;
+        stateBeforeDialogue = CurrentState;
+        CurrentState = State::DIALOGUE;
 
-            // currentPhaseIndex 与 Boss AI 分支对应：0 初始，1 锁链阶段，2 暴走阶段。
-            currentPhaseIndex = i + 1;
+        // 阶段切换时消除旧弹幕，避免玩家在对话结束后立即被残留敌弹命中。
+        ClearEnemyBullets();
+        boss.ClearPhaseTransition();
 
-            enemyPhases[i].dialogueTriggered = true;
-
-            // 阶段对话结束后会恢复到触发前的游戏状态。
-            DialoueQueue = enemyPhases[i].dialogues;
-            cur_index = 0;
-            stateBeforeDialogue = CurrentState;
-            CurrentState = State::DIALOGUE;
-
-            // 阶段切换时消除旧弹幕，避免玩家在对话结束后立即被残留敌弹命中。
-            ClearEnemyBullets();
-
-            std::cout << "Phase Triggered! Bullets Cleared." << std::endl;
-            break;
-        }
+        std::cout << "Phase Triggered! Bullets Cleared." << std::endl;
     }
 }
 
@@ -670,6 +598,11 @@ void Game::Update(float DeltaTime)
         escPressed = false;
 
         if (player) player->Update(DeltaTime);
+        for (auto& enemy : Enemies) {
+            if (enemy && enemy->IsActive()) {
+                enemy->Update(DeltaTime, player.get());
+            }
+        }
 
         // 玩家射击：按住 Z 时按冷却间隔连续发弹，火力等级会增加侧向子弹。
         if (key[SDL_SCANCODE_Z] && shootTimer <= 0.0f) {
@@ -723,38 +656,133 @@ void Game::Update(float DeltaTime)
 
         // 处理 Bomb/符卡输入；xPressed 防止按住 X 时连续释放 Bomb。
         static bool xPressed = false;
-        if (key[SDL_SCANCODE_X] && !xPressed && player->CanUseBomb() && !activeSpell) {
+        if (key[SDL_SCANCODE_X] && !xPressed && player->CanUseBomb() && !isSpellActive) {
             player->ConsumeBomb();
-
-            SpellContext ctx;
-            ctx.enemyBullets = &enemyBullets;
-            ctx.boss = Enemies.empty() ? nullptr : Enemies[0].get();
-            ctx.player = player.get();
-            ctx.renderer = cur_Renderer;
-
+            isSpellActive = true;
+            spellTimer = 3.0f;
+            spellUser = selectedCharID;
+            player->SetInvincible(3.5f);
             if (selectedCharID == CharacterID::REIMU) {
-                activeSpell = std::make_unique<ReimuSpellCard>(ctx);
-                if (se_REIMUBomb) PlaySfx(se_REIMUBomb);
+                PlaySfx(se_REIMUBomb);
+                reimuOrbs.clear();
+                for (int i = 0; i < 8; i++) {
+                    ReimuOrb orb;
+                    orb.spawnDelay = i * 0.25f;
+                    orb.speed = 900.0f;
+                    reimuOrbs.push_back(orb);
+                }
+                orbSpawnTimer = 0.0f;
+                orbSpawnIndex = 0;
+                orbAllSpawned = false;
+                orbAllLaunched = false;
             }
             else {
-                activeSpell = std::make_unique<MarisaSpellCard>(ctx);
-                if (se_MARISABomb) PlaySfx(se_MARISABomb);
+                PlaySfx(se_MARISABomb);
             }
-
-            activeSpell->Activate();
             xPressed = true;
         }
         if (!key[SDL_SCANCODE_X]) xPressed = false;
 
-        if (activeSpell) {
-            activeSpell->Update(DeltaTime);
-            if (activeSpell->IsFinished()) {
-                activeSpell.reset();
+        if (isSpellActive) {
+            spellTimer -= DeltaTime;
+            for (auto& b : enemyBullets) {
+                if (spellUser == CharacterID::MARISA) {
+                    if (std::abs(b->GetPosition().x - player->GetPosition().x) < 100.0f) {
+                        b->Deactivate();
+                    }
+                }
+                else {
+                    b->Deactivate();
+                }
+            }
+
+            if (spellUser == CharacterID::REIMU && player) {
+                const Vector2D& playerPosition = player->GetPosition();
+                bool bossAlive = !Enemies.empty() && Enemies[0]->IsActive();
+                float bossX = bossAlive ? Enemies[0]->GetPosition().x : playerPosition.x;
+                float bossY = bossAlive ? Enemies[0]->GetPosition().y : playerPosition.y - 400.0f;
+
+                if (!orbAllSpawned) {
+                    orbSpawnTimer += DeltaTime;
+                    while (orbSpawnIndex < static_cast<int>(reimuOrbs.size()) &&
+                        orbSpawnTimer >= reimuOrbs[orbSpawnIndex].spawnDelay) {
+                        reimuOrbs[orbSpawnIndex].spawned = true;
+                        orbSpawnIndex++;
+                    }
+                    if (orbSpawnIndex >= static_cast<int>(reimuOrbs.size())) {
+                        orbAllSpawned = true;
+                    }
+                }
+
+                for (auto& orb : reimuOrbs) {
+                    if (!orb.alive) continue;
+                    int idx = static_cast<int>(&orb - &reimuOrbs[0]);
+                    if (!orb.launched) {
+                        if (orb.spawned) {
+                            orb.angle += DeltaTime * 5.0f;
+                            float targetDist = 200.0f + std::sin(DeltaTime * 30.0f + idx) * 30.0f;
+                            float t = std::min(1.0f, (orbSpawnTimer - orb.spawnDelay) / 0.3f);
+                            float dist = targetDist * t;
+                            orb.x = playerPosition.x + std::cos(orb.angle + idx * 0.785f) * dist;
+                            orb.y = playerPosition.y + std::sin(orb.angle + idx * 0.785f) * dist;
+                        }
+                        else {
+                            orb.x = playerPosition.x;
+                            orb.y = playerPosition.y;
+                        }
+                    }
+                    else {
+                        orb.x += std::cos(orb.angle) * orb.speed * DeltaTime;
+                        orb.y += std::sin(orb.angle) * orb.speed * DeltaTime;
+                        if (bossAlive && Enemies[0]->IsActive()) {
+                            Entity tmp(orb.x, orb.y, 20.0f);
+                            if (tmp.CheckCollision(Enemies[0].get())) {
+                                Enemies[0]->hit(60.0f);
+                                orb.alive = false;
+                            }
+                        }
+                        if (orb.x < -200.0f || orb.x > 2120.0f || orb.y < -200.0f || orb.y > 1280.0f) {
+                            orb.alive = false;
+                        }
+                    }
+                }
+
+                if (orbAllSpawned && !orbAllLaunched) {
+                    for (auto& orb : reimuOrbs) {
+                        if (!orb.alive || orb.launched) continue;
+                        float dx = bossX - orb.x;
+                        float dy = bossY - orb.y;
+                        orb.angle = std::atan2(dy, dx);
+                        orb.launched = true;
+                    }
+                    orbAllLaunched = true;
+                }
+            }
+
+            if (spellUser == CharacterID::MARISA) {
+                for (auto& enemy : Enemies) {
+                    if (enemy && enemy->IsActive() && enemy->GetCurrentSpellHP() > 0.0f) {
+                        enemy->hit(5.0f);
+                    }
+                }
+            }
+
+            if (spellTimer <= 0.0f) {
+                isSpellActive = false;
+                reimuOrbs.clear();
+                orbAllSpawned = false;
+                orbAllLaunched = false;
             }
         }
 
-        // Boss 弹幕 AI 更新；胜利判定后会提前跳过。
-        UpdateBulletPattern(DeltaTime);
+        // Boss 弹幕 AI 更新；enemy-pattern 分支允许 Bomb 期间继续按阶段调度 Boss。
+        if (!Enemies.empty() && Enemies[0]->IsActive()) {
+            Enemy& boss = *Enemies[0];
+            if (boss.ShouldPlaySfx(DeltaTime)) {
+                PlaySfx((boss.GetCurrentSfxIndex() == 1) ? se_EnemyShoot2 : se_EnemyShoot1);
+            }
+            boss.Shoot(enemyBullets, player.get(), DeltaTime);
+        }
 
         // 更新所有战斗对象。
         for (auto& b : playerBullets) b->Update(DeltaTime);
@@ -787,6 +815,9 @@ void Game::Update(float DeltaTime)
                 if (player->Dead_judge()) {
                     // 残机小于 0，彻底游戏结束
                     activeSpell.reset();
+                    isSpellActive = false;
+                    spellTimer = 0.0f;
+                    reimuOrbs.clear();
                     shakeTime = 0.0f;
                     Mix_HaltMusic();    // 停止背景音乐
                     continueTimer = ContinueSeconds;
@@ -861,24 +892,31 @@ void Game::Update(float DeltaTime)
         GameContext ctx{};
         ctx.isPlaying = (CurrentState == State::PLAYING);
         ctx.hasBoss = !Enemies.empty() && Enemies[0]->IsActive();
-        ctx.bossHp = ctx.hasBoss ? Enemies[0]->GetBlood() : 0.0f;
+        Enemy* boss = ctx.hasBoss ? Enemies[0].get() : nullptr;
+        int bossPhaseIndex = boss ? boss->GetCurrentPhaseIndex() : 0;
+        ctx.bossHp = boss ? boss->GetTotalRemainingHP() : 0.0f;
         ctx.playerDefeated = player ? player->Dead_judge() : false;
-        ctx.phaseIndex = currentPhaseIndex;
-        ctx.phaseChanged = (currentPhaseIndex != lastPhaseIndex);
+        ctx.phaseIndex = bossPhaseIndex;
+        ctx.phaseChanged = (bossPhaseIndex != lastPhaseIndex);
         if (stageDirector) {
             stageDirector->Update(DeltaTime, ctx);
             HandleStageSignals(ctx);
         }
-        lastPhaseIndex = currentPhaseIndex;
+        if (ctx.isPlaying) {
+            lastPhaseIndex = bossPhaseIndex;
+        }
 
         // 胜利处理。
-        if (!Enemies.empty() && Enemies[0]->GetBlood() <= 0) {
+        if (!Enemies.empty() && !Enemies[0]->IsAlive()) {
             const Vector2D& bossPos = Enemies[0]->GetPosition();
             SpawnBossRewardItems(bossPos.x, bossPos.y);
             PlaySfx(se_Victory);
             Mix_HaltMusic();
             CurrentState = State::VICTORY;
             activeSpell.reset();
+            isSpellActive = false;
+            spellTimer = 0.0f;
+            reimuOrbs.clear();
             shakeTime = 0.0f;
         }
         break;
@@ -1268,19 +1306,74 @@ void Game::Render()
         for (auto& p : powerUps) if (p->IsActive()) p->Render(cur_Renderer);
         // 渲染新类型道具（Item 多态体系）
         for (auto& item : items) if (item->IsActive()) item->Render(cur_Renderer);
-        // 符卡演出与名称显示。
-        if (activeSpell) {
+        // enemy-pattern 分支的符卡/Bomb 演出。
+        if (isSpellActive) {
             SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_BLEND);
             SDL_SetRenderDrawColor(cur_Renderer, 0, 0, 0, 150);
             SDL_Rect full = { 0, 0, 1920, 1080 };
             SDL_RenderFillRect(cur_Renderer, &full);
-            activeSpell->Render(cur_Renderer);
+
+            if (spellUser == CharacterID::REIMU && player && tex_BombReimu) {
+                SDL_Color orbColors[8] = {
+                    {255, 60, 60, 255}, {255, 160, 30, 255},
+                    {255, 255, 50, 255}, {60, 255, 100, 255},
+                    {60, 180, 255, 255}, {80, 60, 255, 255},
+                    {200, 60, 255, 255}, {255, 100, 180, 255},
+                };
+                int idx = 0;
+                for (auto& orb : reimuOrbs) {
+                    if (!orb.alive || !orb.spawned) {
+                        idx++;
+                        continue;
+                    }
+                    float orbSize = 100.0f + std::sin(spellTimer * 10.0f + idx) * 15.0f;
+                    SDL_SetTextureColorMod(tex_BombReimu, orbColors[idx].r, orbColors[idx].g, orbColors[idx].b);
+                    SDL_Rect orbRect = {
+                        static_cast<int>(orb.x - orbSize / 2.0f),
+                        static_cast<int>(orb.y - orbSize / 2.0f),
+                        static_cast<int>(orbSize),
+                        static_cast<int>(orbSize)
+                    };
+                    SDL_RenderCopy(cur_Renderer, tex_BombReimu, NULL, &orbRect);
+                    idx++;
+                }
+            }
+            else if (spellUser == CharacterID::MARISA && player) {
+                const Vector2D& playerPosition = player->GetPosition();
+                SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_ADD);
+                int offsetX = (shakeTime > 0.0f) ? (rand() % 10 - 5) : 0;
+                SDL_SetRenderDrawColor(cur_Renderer, 100, 100, 255, 150);
+                SDL_Rect beamAura = {
+                    static_cast<int>(playerPosition.x) - 120 + offsetX,
+                    0,
+                    240,
+                    static_cast<int>(playerPosition.y)
+                };
+                SDL_RenderFillRect(cur_Renderer, &beamAura);
+                SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 255, 180);
+                SDL_Rect beamCore = {
+                    static_cast<int>(playerPosition.x) - 50 + offsetX,
+                    0,
+                    100,
+                    static_cast<int>(playerPosition.y)
+                };
+                SDL_RenderFillRect(cur_Renderer, &beamCore);
+                SDL_SetRenderDrawBlendMode(cur_Renderer, SDL_BLENDMODE_BLEND);
+            }
 
             if (font) {
-                SDL_Surface* sSurf = TTF_RenderUTF8_Blended(font, activeSpell->GetName(), { 255, 255, 255, 255 });
+                const char* spellName = (spellUser == CharacterID::REIMU)
+                    ? "灵符「梦想封印」"
+                    : "恋符「Master Spark」";
+                SDL_Surface* sSurf = TTF_RenderUTF8_Blended(font, spellName, { 255, 255, 255, 255 });
                 if (sSurf) {
                     SDL_Texture* sTex = SDL_CreateTextureFromSurface(cur_Renderer, sSurf);
-                    SDL_Rect sRect = { 1320, 150, sSurf->w, sSurf->h };
+                    SDL_Rect sRect = {
+                        1800 - static_cast<int>((3.0f - spellTimer) * 400.0f),
+                        150,
+                        sSurf->w,
+                        sSurf->h
+                    };
                     SDL_RenderCopy(cur_Renderer, sTex, NULL, &sRect);
                     SDL_FreeSurface(sSurf); SDL_DestroyTexture(sTex);
                 }
@@ -1343,22 +1436,20 @@ void Game::Render()
                 SDL_DestroyTexture(tBomb);
             }
         }
-        // 3. 绘制 Boss 血条 (顶部居中长条)
+        // 3. 绘制 Boss 当前符卡血条 (顶部居中长条)
         if (!Enemies.empty() && Enemies[0]->IsActive()) {
             Enemy* boss = Enemies[0].get();
 
             // --- [参数定义] ---
             int screenW = 1900;
             int barW = 600;         // Boss 血条宽度（比玩家的长，显大气）
-            int barH = 15;           // Boss 血条高度
+            int barH = 18;           // Boss 血条高度
             int uiX = (screenW - barW) / 2; // 水平居中
             int uiY = 10;            // 距离顶部 10 像素
 
-            // 当前 Boss 初始血量固定为 6000，血条按该值归一化。
-            float currentHp = boss->GetBlood();
-            static float maxHp = 6000.0f; // 与 Enemy 构造函数中的初始血量保持一致。
-
-            float hpPercent = currentHp / maxHp;
+            float currentHp = boss->GetCurrentSpellHP();
+            float maxHp = boss->GetCurrentSpellMaxHP();
+            float hpPercent = (maxHp > 0.0f) ? currentHp / maxHp : 0.0f;
             if (hpPercent < 0) hpPercent = 0;
             if (hpPercent > 1) hpPercent = 1;
 
@@ -1378,13 +1469,33 @@ void Game::Render()
             SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 255, 255);
             SDL_RenderDrawRect(cur_Renderer, &bgRect);
 
-            // --- [4. 绘制 Boss 阶段标记 (可选)] ---
-            // 在血条上标记出 4000 和 2000 的位置，对应你的阶段切换
-            SDL_SetRenderDrawColor(cur_Renderer, 255, 255, 255, 200);
-            int p1X = uiX + (int)(barW * (4000.0f / maxHp));
-            int p2X = uiX + (int)(barW * (2000.0f / maxHp));
-            SDL_RenderDrawLine(cur_Renderer, p1X, uiY, p1X, uiY + barH);
-            SDL_RenderDrawLine(cur_Renderer, p2X, uiY, p2X, uiY + barH);
+            if (font) {
+                int remain = static_cast<int>(std::ceil(boss->GetSpellTimeRemaining()));
+                if (remain < 0) remain = 0;
+
+                char timeBuf[32];
+                sprintf_s(timeBuf, "TIME: %d", remain);
+                SDL_Color timeColor = (remain <= 5) ? SDL_Color{ 255, 50, 50, 255 } : SDL_Color{ 255, 255, 255, 255 };
+                SDL_Surface* timeSurf = TTF_RenderUTF8_Blended(font, timeBuf, timeColor);
+                if (timeSurf) {
+                    SDL_Texture* timeTex = SDL_CreateTextureFromSurface(cur_Renderer, timeSurf);
+                    SDL_Rect timeRect = { uiX + barW + 15, uiY - 2, timeSurf->w, timeSurf->h };
+                    SDL_RenderCopy(cur_Renderer, timeTex, NULL, &timeRect);
+                    SDL_FreeSurface(timeSurf);
+                    SDL_DestroyTexture(timeTex);
+                }
+
+                char phaseBuf[32];
+                sprintf_s(phaseBuf, "%d/%d", boss->GetCurrentPhaseIndex() + 1, boss->GetTotalPhases());
+                SDL_Surface* phaseSurf = TTF_RenderUTF8_Blended(font, phaseBuf, { 200, 200, 200, 255 });
+                if (phaseSurf) {
+                    SDL_Texture* phaseTex = SDL_CreateTextureFromSurface(cur_Renderer, phaseSurf);
+                    SDL_Rect phaseRect = { uiX - 80, uiY - 2, phaseSurf->w, phaseSurf->h };
+                    SDL_RenderCopy(cur_Renderer, phaseTex, NULL, &phaseRect);
+                    SDL_FreeSurface(phaseSurf);
+                    SDL_DestroyTexture(phaseTex);
+                }
+            }
         }
         // 对话状态下绘制半透明遮罩和对话框，战斗逻辑暂停在 DIALOGUE 状态。
         if (CurrentState == State::DIALOGUE && cur_index < DialoueQueue.size()) {
@@ -1588,6 +1699,8 @@ void Game::Clean() {
     tex_PowerUp = nullptr; // tex_PowerUp 只是 tex_PlayerBullet 的别名，不能重复销毁。
     DestroyTexture(tex_BackgroundMenu);
     DestroyTexture(tex_BackgroundBattle);
+    DestroyTexture(tex_BombReimu);
+    DestroyTexture(tex_BombMarisa);
 
     if (font) {
         TTF_CloseFont(font);

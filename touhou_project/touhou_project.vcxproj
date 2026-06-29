@@ -151,9 +151,11 @@
   <ItemGroup>
     <ClInclude Include="Bullet.h" />
     <ClInclude Include="BulletPattern.h" />
+    <ClInclude Include="BulletStrategy.h" />
     <ClInclude Include="Enemy.h" />
     <ClInclude Include="Entity.h" />
     <ClInclude Include="Game.h" />
+    <ClInclude Include="GameTypes.h" />
     <ClInclude Include="Item.h" />
     <ClInclude Include="BombItem.h" />
     <ClInclude Include="LifeItem.h" />

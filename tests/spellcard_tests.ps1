@@ -1,4 +1,4 @@
-# SpellCard System Test Suite
+﻿# SpellCard System Test Suite
 # Tests the new SpellCard architecture for correctness and integration
 
 $ErrorActionPreference = "Stop"
@@ -109,31 +109,32 @@ Run-Test { Assert-Match   $marisaCpp "255,\s*255,\s*200" "MarisaSpellCard::Rende
 # ===== 5. Game.h Integration =====
 Write-Host "===== 5. Game.h Integration =====" -ForegroundColor Yellow
 
-Run-Test { Assert-Match   $gameH "SpellCard\.h" "Game.h should include SpellCard.h" }
-Run-Test { Assert-Match   $gameH "std::unique_ptr<SpellCard>\s+activeSpell" "Game should have unique_ptr<SpellCard> activeSpell" }
-Run-Test { Assert-NoMatch $gameH "isSpellActive" "Game.h should not have old isSpellActive member" }
-Run-Test { Assert-NoMatch $gameH "spellTimer" "Game.h should not have old spellTimer member" }
-Run-Test { Assert-NoMatch $gameH "spellUser" "Game.h should not have old spellUser member" }
+Run-Test { Assert-Match   $gameH "SpellCard\.h" "Game.h should keep SpellCard.h available" }
+Run-Test { Assert-Match   $gameH "std::unique_ptr<SpellCard>\s+activeSpell" "Game should retain SpellCard storage for compatibility" }
+Run-Test { Assert-Match   $gameH "isSpellActive" "Game.h should carry enemy-pattern spell state" }
+Run-Test { Assert-Match   $gameH "spellTimer" "Game.h should carry enemy-pattern spell timer" }
+Run-Test { Assert-Match   $gameH "spellUser" "Game.h should carry enemy-pattern spell user" }
+Run-Test { Assert-Match   $gameH "struct\s+ReimuOrb" "Game.h should define ReimuOrb for Reimu bomb tracking" }
+Run-Test { Assert-Match   $gameH "tex_BombReimu" "Game.h should store Reimu bomb texture" }
+Run-Test { Assert-Match   $gameH "tex_BombMarisa" "Game.h should store Marisa bomb texture" }
 
 # ===== 6. Game.cpp Integration =====
 Write-Host "===== 6. Game.cpp Integration =====" -ForegroundColor Yellow
 
-Run-Test { Assert-Match   $gameCpp "ReimuSpellCard\.h" "Game.cpp should include ReimuSpellCard.h" }
-Run-Test { Assert-Match   $gameCpp "MarisaSpellCard\.h" "Game.cpp should include MarisaSpellCard.h" }
-Run-Test { Assert-Match   $gameCpp "activeSpell\.reset\s*\(\s*\)" "Game.cpp should reset activeSpell in InitBattle" }
-Run-Test { Assert-Match   $gameCpp "SpellContext\s+ctx" "Game.cpp should create SpellContext for bomb" }
-Run-Test { Assert-Match   $gameCpp "ctx\.enemyBullets\s*=\s*&enemyBullets" "SpellContext should bind enemyBullets" }
-Run-Test { Assert-Match   $gameCpp "ctx\.boss\s*=" "SpellContext should bind boss" }
-Run-Test { Assert-Match   $gameCpp "ctx\.player\s*=" "SpellContext should bind player" }
-Run-Test { Assert-Match   $gameCpp "ctx\.renderer\s*=\s*cur_Renderer" "SpellContext should bind renderer" }
-Run-Test { Assert-Match   $gameCpp "std::make_unique<ReimuSpellCard>" "Game should create ReimuSpellCard for Reimu" }
-Run-Test { Assert-Match   $gameCpp "std::make_unique<MarisaSpellCard>" "Game should create MarisaSpellCard for Marisa" }
-Run-Test { Assert-Match   $gameCpp "activeSpell->Activate\s*\(\s*\)" "Game should call Activate on new spell" }
-Run-Test { Assert-Match   $gameCpp "activeSpell->Update\s*\(" "Game should Update activeSpell in PLAYING state" }
-Run-Test { Assert-Match   $gameCpp "activeSpell->IsFinished\s*\(\s*\)" "Game should check IsFinished to end spell" }
-Run-Test { Assert-Match   $gameCpp "activeSpell->Render\s*\(\s*cur_Renderer\s*\)" "Game should Render activeSpell" }
-Run-Test { Assert-NoMatch $gameCpp "isSpellActive\s*=\s*true" "Game.cpp should not set old isSpellActive" }
-Run-Test { Assert-NoMatch $gameCpp "spellTimer\s*=" "Game.cpp should not use old spellTimer" }
+Run-Test { Assert-Match   $gameCpp "assets/image/Reimu\.png" "Game.cpp should load moved image assets" }
+Run-Test { Assert-Match   $gameCpp "assets/image/Reimu_b\.png" "Game.cpp should load Reimu bomb asset" }
+Run-Test { Assert-Match   $gameCpp "assets/image/Marisa_b\.png" "Game.cpp should load Marisa bomb asset" }
+Run-Test { Assert-Match   $gameCpp "isSpellActive\s*=\s*true" "Game.cpp should activate enemy-pattern spell state" }
+Run-Test { Assert-Match   $gameCpp "spellTimer\s*=\s*3\.0f" "Game.cpp should run spell for 3 seconds" }
+Run-Test { Assert-Match   $gameCpp "player->SetInvincible\s*\(\s*3\.5f\s*\)" "Game.cpp should grant invincibility while bombing" }
+Run-Test { Assert-Match   $gameCpp "reimuOrbs\.clear\s*\(" "Game.cpp should initialize Reimu orbs" }
+Run-Test { Assert-Match   $gameCpp "orb\.spawnDelay\s*=\s*i\s*\*\s*0\.25f" "Reimu orbs should spawn one-by-one" }
+Run-Test { Assert-Match   $gameCpp "Enemies\[0\]->hit\s*\(\s*60\.0f\s*\)" "Reimu orbs should damage boss on collision" }
+Run-Test { Assert-Match   $gameCpp "enemy->hit\s*\(\s*5\.0f\s*\)" "Marisa bomb should deal sustained damage" }
+Run-Test { Assert-Match   $gameCpp "SDL_RenderCopy\s*\(\s*cur_Renderer,\s*tex_BombReimu" "Game should render Reimu bomb texture" }
+Run-Test { Assert-Match   $gameCpp "Master Spark" "Game should render Marisa spell name" }
+Run-Test { Assert-Match   $gameCpp "DestroyTexture\s*\(\s*tex_BombReimu\s*\)" "Game should destroy Reimu bomb texture" }
+Run-Test { Assert-Match   $gameCpp "DestroyTexture\s*\(\s*tex_BombMarisa\s*\)" "Game should destroy Marisa bomb texture" }
 
 # ===== 7. Player.h Friend Access =====
 Write-Host "===== 7. Player.h Friend Access =====" -ForegroundColor Yellow
